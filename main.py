@@ -163,13 +163,26 @@ def convert_str_carts_np_carts(carts: str):
 #     return G_i_1
 
 
-def build_ACSF(carts: str,
-               elements=[1, 8],
-               G2_params=[[0.4, 0.2], [0.6, 0.8]],
-               Rc=6.0):
+def get_3d_angle(r1, r2, r3):
+    # ba = a - b
+    # bc = c - b
+    r21 = r1 - r2
+    r23 = r3 - r2
+
+    cos_angle = np.dot(r21, r23) / (np.linalg.norm(r21) * np.linalg.norm(r23))
+    return np.arccos(cos_angle)
+
+
+def build_ACSF(
+        carts: str,
+        elements=[1, 6],
+        G2_params=[(0.4, 0.2), (0.6, 0.8)],  # (eta, Rs)
+        G4_params=[(0.4, 2, 1), (0.6, 2, 1),
+                   (0.6, 2, -1)],  # (eta, zeta, lambda)
+        Rc=6.0):
     carts = convert_str_carts_np_carts(carts)
     n = len(carts)
-    G1 = np.zeros(n)
+    G1 = np.zeros((n, 1))
     for i in range(n):
         for j in range(n):
             if i == j:
@@ -180,26 +193,147 @@ def build_ACSF(carts: str,
 
     print(G1)
 
-    return
+    G2 = np.zeros((n, len(G2_params)))
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            for p, (eta, Rs) in enumerate(G2_params):
+                r_ij = np.linalg.norm(carts[i, 1:] - carts[j, 1:])
+                G_i_2 = math.exp(-eta * (r_ij - Rs)) * cut_off_cos(r_ij, Rc)
+                G2[i, p] += G_i_2
+
+    print(G2)
+
+    G4 = np.zeros((n, len(G4_params)))
+    for i in range(n):
+        for j in range(n):
+            for k in range(n):
+                if i == j or i == k or j == k:
+                    continue
+                for p, (eta, zeta, lam) in enumerate(G4_params):
+                    r_ij = np.linalg.norm(carts[i, 1:] - carts[j, 1:])
+                    r_ik = np.linalg.norm(carts[i, 1:] - carts[k, 1:])
+                    r_jk = np.linalg.norm(carts[j, 1:] - carts[k, 1:])
+                    exp_p = -eta * (r_ij**2 + r_ik**2 + r_jk**2)
+                    fc_3 = cut_off_cos(r_ij, Rc) * cut_off_cos(
+                        r_ik, Rc) * cut_off_cos(r_jk, Rc)
+                    t_ijk = get_3d_angle(carts[i, 1:], carts[j, 1:], carts[k,
+                                                                           1:])
+                    G_i_4 = (1 + lam *
+                             math.cos(t_ijk))**zeta * math.exp(exp_p) * fc_3
+                    G4[i, p] += G_i_4
+
+    atomic_order = np.zeros((n, 1))
+    atomic_order[:, 0] = carts[:, 0]
+    G = np.hstack((atomic_order, G1, G2, G4))
+    print("final G")
+    print(G)
+    return G
 
 
-def main():
-    # data = collect_data(1)
-    # print(data)
-    h2o = """
+def element_subvision(elements: [int]):
+    el_dc = {}
+    for n, i in enumerate(elements):
+        el_dc[i] = n
+    return el_dc
+
+
+def build_ACSF_atom_subdivided(
+        carts: str,
+        elements=[1, 6, 8],
+        G2_params=[(0.4, 0.2), (0.6, 0.8)],  # (eta, Rs)
+        G4_params=[(0.4, 2, 1), (0.6, 2, 1),
+                   (0.6, 2, -1)],  # (eta, zeta, lambda)
+        Rc=6.0,
+        verbose=False):
+    carts = convert_str_carts_np_carts(carts)
+    n = len(carts)
+    el_dc = element_subvision(elements)
+    el_n = len(el_dc)
+    G1 = np.zeros((n, 1 * el_n))
+
+    for i in range(n):
+        el = el_dc[carts[i, 0]]
+        for j in range(n):
+            if i == j:
+                continue
+            r_ij = np.linalg.norm(carts[i, 1:] - carts[j, 1:])
+            G_i_1 = cut_off_cos(r_ij, Rc)
+            G1[i, el] += G_i_1
+
+    G2 = np.zeros((n, len(G2_params) * el_n))
+    for i in range(n):
+        el = el_dc[carts[i, 0]]
+        for j in range(n):
+            if i == j:
+                continue
+            for p, (eta, Rs) in enumerate(G2_params):
+                r_ij = np.linalg.norm(carts[i, 1:] - carts[j, 1:])
+                G_i_2 = math.exp(-eta * (r_ij - Rs)) * cut_off_cos(r_ij, Rc)
+                G2[i, p + el] += G_i_2
+
+    G4 = np.zeros((n, len(G4_params) * el_n))
+    for i in range(n):
+        el = el_dc[carts[i, 0]]
+        for j in range(n):
+            for k in range(n):
+                if i == j or i == k or j == k:
+                    continue
+                for p, (eta, zeta, lam) in enumerate(G4_params):
+                    r_ij = np.linalg.norm(carts[i, 1:] - carts[j, 1:])
+                    r_ik = np.linalg.norm(carts[i, 1:] - carts[k, 1:])
+                    r_jk = np.linalg.norm(carts[j, 1:] - carts[k, 1:])
+                    exp_p = -eta * (r_ij**2 + r_ik**2 + r_jk**2)
+                    fc_3 = cut_off_cos(r_ij, Rc) * cut_off_cos(
+                        r_ik, Rc) * cut_off_cos(r_jk, Rc)
+                    t_ijk = get_3d_angle(carts[i, 1:], carts[j, 1:], carts[k,
+                                                                           1:])
+                    G_i_4 = (1 + lam *
+                             math.cos(t_ijk))**zeta * math.exp(exp_p) * fc_3
+                    G4[i, p + el] += G_i_4
+    atomic_order = np.zeros((n, 1))
+    atomic_order[:, 0] = carts[:, 0]
+    G = np.hstack((atomic_order, G1, G2, G4))
+    if verbose:
+        print(el_dc)
+        print("G1")
+        print(G1)
+        print("G2")
+        print(G2)
+        print("G4")
+        print(G4)
+        print("final G")
+        print(G)
+
+    return G
+
+
+def h2o_geom():
+    return """
 8  0.000000  0.000000  0.000000
 1  0.758602  0.000000  0.504284
 1  0.758602  0.000000  -0.504284
 """
-    ch4 = """
+
+
+def ch4_geom():
+    return """
 6 	0.0000 	0.0000 	0.0000
 1	0.6276 	0.6276 	0.6276
 1	0.6276 	-0.6276 	-0.6276
 1	-0.6276 	0.6276 	-0.6276
 1	-0.6276 	-0.6276 	0.6276
     """
-    build_ACSF(ch4)
-    # build_ACSF_dscribe()
+
+
+def main():
+    data = collect_data(1)
+    print(data)
+
+    # ch4 = ch4_geom()
+    # G = build_ACSF_atom_subdivided(ch4)
+    # print(G)
 
     return
 
