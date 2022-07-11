@@ -8,6 +8,7 @@ import torch
 from dscribe.descriptors import ACSF
 from ase.build import molecule
 import math
+import pprint
 """
 reading data inspired by zatayue/MXMNet
 """
@@ -25,9 +26,9 @@ class mol_i:
     carts: np.ndarray
 
 
-def collect_data(stop=1,
-                 path_sdf="data/gdb9.sdf",
-                 path_csv="data/gdb9.sdf.csv"):
+def collect_data_dataclass(stop=1,
+                           path_sdf="data/gdb9.sdf",
+                           path_csv="data/gdb9.sdf.csv"):
     """
     Collects downloaded qm9 data
     """
@@ -117,7 +118,7 @@ def build_ACSF_dscribe():
     #     G_1 = rad_G_1(cut_off_cos, i, h2o_carts, R_c)
     #     G_2 = rad_G_2(cut_off_cos, i, h2o_carts, R_c, R_s, eta)
     #     G.append(G_2)
-    #print(np.shape(correct), np.shape(G))
+    # print(np.shape(correct), np.shape(G))
     # print(correct, G)
 
     return
@@ -240,14 +241,13 @@ def element_subvision(elements: [int]):
 
 
 def build_ACSF_atom_subdivided(
-        carts: str,
-        elements=[1, 6, 8],
+        carts: np.array,
+        elements=[1, 6, 7, 8, 9],
         G2_params=[(0.4, 0.2), (0.6, 0.8)],  # (eta, Rs)
         G4_params=[(0.4, 2, 1), (0.6, 2, 1),
                    (0.6, 2, -1)],  # (eta, zeta, lambda)
         Rc=6.0,
         verbose=False):
-    carts = convert_str_carts_np_carts(carts)
     n = len(carts)
     el_dc = element_subvision(elements)
     el_n = len(el_dc)
@@ -309,27 +309,63 @@ def build_ACSF_atom_subdivided(
     return G
 
 
+def collect_data(stop=1,
+                 path_sdf="data/gdb9.sdf",
+                 path_csv="data/gdb9.sdf.csv"):
+    """
+    Collects downloaded qm9 data
+    """
+    # types = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
+    # symbols = {'H': 1, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
+    df = pd.read_csv(path_csv)
+    suppl = Chem.SDMolSupplier(path_sdf, removeHs=False, sanitize=False)
+    mols = []
+    # for i, mol in enumerate(tqdm(suppl)):
+    for i, mol in enumerate(suppl):
+        m = mol.GetProp("_Name")
+        e = float(df.loc[df['mol_id'] == m]["u298_atom"])
+        N = mol.GetNumAtoms()
+        pos = suppl.GetItemText(i).split('\n')[4:4 + N]
+        atoms = mol.GetAtoms()
+        carts = []
+        for n, line in enumerate(pos):
+            a = line.split()[:3]
+            anum = float(atoms[n].GetAtomicNum())
+            row = [anum, float(a[0]), float(a[1]), float(a[2])]
+            carts.append(row)
+        arr = np.array(carts)
+
+        G = build_ACSF_atom_subdivided(arr)
+        mols.append([G, e])
+        if stop == i + 1:
+            break
+    return mols
+
+
 def h2o_geom():
-    return """
+    carts = """
 8  0.000000  0.000000  0.000000
 1  0.758602  0.000000  0.504284
 1  0.758602  0.000000  -0.504284
-"""
+    """
+    return convert_str_carts_np_carts(carts)
 
 
 def ch4_geom():
-    return """
+    carts = """
 6 	0.0000 	0.0000 	0.0000
 1	0.6276 	0.6276 	0.6276
 1	0.6276 	-0.6276 	-0.6276
 1	-0.6276 	0.6276 	-0.6276
 1	-0.6276 	-0.6276 	0.6276
     """
+    return convert_str_carts_np_carts(carts)
 
 
 def main():
+    pp = pprint.PrettyPrinter(indent=4)
     data = collect_data(1)
-    print(data)
+    pp.pprint(data)
 
     # ch4 = ch4_geom()
     # G = build_ACSF_atom_subdivided(ch4)
