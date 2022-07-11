@@ -62,7 +62,7 @@ def collect_data(stop=1,
 def cut_off_cos(R_ij, R_c):
     if R_ij > R_c:
         return 0
-    return 0.5 * math.cos(math.pi * R_ij / R_c) + 1
+    return 0.5 * math.cos(math.pi * R_ij / R_c + 1)
 
 
 def distance_3d(r1, r2):
@@ -88,35 +88,37 @@ def rad_G_2(cut_off_func, i, carts, R_c, R_s, eta):
         G_i_2 += math.exp(-eta * (R_ij - R_s)) * cut_off_func(R_ij, R_c)
     return G_i_2
 
-def build_ACSF():
+
+def build_ACSF_dscribe():
     # symbols = {'H': 1, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
 
     R_c = 6.0
     R_s = 0.5
     eta = 0.5
     acsf = ACSF(
-        species=["H", "O", "C", "N", "F"],
+        # species=["H", "O", "C", "N", "F"],
         # species=["H", "O"],
+        species=["H", "O"],
+        # species=["H"],
         rcut=R_c,
-        g2_params=[[0.5, 0.5]],
+        # g2_params=[[0.5, 0.5], [0.5, 0.5]],
         # g4_params=[[1, 1, 1], [1, 2, 1], [1, 1, -1], [1, 2, -1]],
     )
     water = molecule("H2O")
+    # water = molecule("H2")
     correct = acsf.create(water, positions=[1])
-
-    h2o_carts = np.array(water.positions)
-    h2o_order = np.array(water.numbers)
-    # print(h2o_carts, h2o_order)
-
-    G = []
-    for i in range(len(h2o_carts[:,0])):
-        G_1 = rad_G_1(cut_off_cos, i, h2o_carts, R_c)
-        G_2 = rad_G_2(cut_off_cos, i, h2o_carts, R_c, R_s, eta)
-        G.append(G_2)
     print(correct)
-    print(np.shape(correct))
-    print(G)
-    print(np.shape(G))
+
+    # h2o_carts = np.array(water.positions)
+    # h2o_order = np.array(water.numbers)
+
+    # G = []
+    # for i in range(len(h2o_carts[:, 0])):
+    #     G_1 = rad_G_1(cut_off_cos, i, h2o_carts, R_c)
+    #     G_2 = rad_G_2(cut_off_cos, i, h2o_carts, R_c, R_s, eta)
+    #     G.append(G_2)
+    #print(np.shape(correct), np.shape(G))
+    # print(correct, G)
 
     return
 
@@ -127,10 +129,77 @@ def test():
     return
 
 
+def remove_extra_wb(line: str):
+    line = line.replace("    ",
+                        " ").replace("   ", " ").replace("  ", " ").replace(
+                            "  ", " ").replace("\n ", "\n")
+
+    return line
+
+
+def convert_str_carts_np_carts(carts: str):
+    carts = remove_extra_wb(carts)
+    carts = carts.split("\n")
+    if carts[0] == "":
+        carts = carts[1:]
+    if carts[-1] == "":
+        carts = carts[:-1]
+    ca = []
+    for n, line in enumerate(carts):
+        a = line.split()
+        row = [float(i) for i in a]
+        ca.append(row)
+    ca = np.array(ca)
+    return ca
+
+
+# def rad_G_1(cut_off_func, i, carts, R_c):
+#     G_i_1 = 0
+#     for j in range(len(carts)):
+#         if i == j:
+#             continue
+#         R_ij = distance_3d(carts[i, :], carts[j, :])
+#         G_i_1 += cut_off_func(R_ij, R_c)
+#     return G_i_1
+
+
+def build_ACSF(carts: str,
+               elements=[1, 8],
+               G2_params=[[0.4, 0.2], [0.6, 0.8]],
+               Rc=6.0):
+    carts = convert_str_carts_np_carts(carts)
+    n = len(carts)
+    G1 = np.zeros(n)
+    for i in range(n):
+        for j in range(n):
+            if i == j:
+                continue
+            r_ij = np.linalg.norm(carts[i, 1:] - carts[j, 1:])
+            G_i_1 = cut_off_cos(r_ij, Rc)
+            G1[i] += G_i_1
+
+    print(G1)
+
+    return
+
+
 def main():
     # data = collect_data(1)
     # print(data)
-    build_ACSF()
+    h2o = """
+8  0.000000  0.000000  0.000000
+1  0.758602  0.000000  0.504284
+1  0.758602  0.000000  -0.504284
+"""
+    ch4 = """
+6 	0.0000 	0.0000 	0.0000
+1	0.6276 	0.6276 	0.6276
+1	0.6276 	-0.6276 	-0.6276
+1	-0.6276 	0.6276 	-0.6276
+1	-0.6276 	-0.6276 	0.6276
+    """
+    build_ACSF(ch4)
+    # build_ACSF_dscribe()
 
     return
 
