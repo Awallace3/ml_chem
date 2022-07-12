@@ -5,6 +5,7 @@ from torch import nn
 import math
 import numpy as np
 from sklearn.model_selection import train_test_split
+from glob import glob
 
 
 def example():
@@ -73,14 +74,24 @@ def example():
     print(f'Result: {model.string()}')
 
 
-def prepare_data(xs, ys, training):
-    #train_x, test_x, train_y, test_y = train_test_split(data[:, :-1],
-    #                                                    data[:, -1],
-    #                                                    test_size=0.3,
-    #                                                    random_state=124)
-
-
+def data_to_tensors(xs, ys):
+    for n, i in enumerate(xs):
+        i = np.float32(i)
+        xs[n] = torch.from_numpy(i)
+        ys[n] = torch.tensor(ys[n], dtype=torch.float32)
     return xs, ys
+
+
+def prepare_data(xs, ys, train_size=0.3):
+    train_x, test_x, train_y, test_y = train_test_split(xs,
+                                                        ys,
+                                                        train_size=train_size,
+                                                        test_size=1 -
+                                                        train_size,
+                                                        random_state=124)
+    train_x, train_y = data_to_tensors(train_x, train_y)
+    test_x, test_y = data_to_tensors(test_x, test_y)
+    return train_x, test_x, train_y, test_y
 
 
 class atomicNet(torch.nn.Module):
@@ -124,16 +135,44 @@ class atomicNet(torch.nn.Module):
         return v
 
 
-def atomic_nn(xs: [], ys: []):
-    prepare_data(xs, ys, 0.8)
-    for n, i in enumerate(xs):
-        i = np.float32(i)
-        xs[n] = torch.from_numpy(i)
-        ys[n] = torch.tensor(ys[n], dtype=torch.float32)
+def saveModel(model, path="./results"):
+    ms = glob(path + "/t*")
+    save_path = path + "/t1"
+    if len(ms) > 0:
+        cnt = [int(i.split("/t")[-1]) for i in ms]
+        v = max(cnt) + 1
+        save_path = path + "/t%d" % v
+        print('model saved to %s' % save_path)
+    torch.save(model.state_dict(), save_path)
+    return
+
+
+def stats_results(differences: [], percentages: []):
+    print(differences, percentages)
+    avg_dif = sum(differences) / len(differences)
+    avg_perc = sum(percentages) / len(percentages)
+    abs_dif = []
+    for i in differences:
+        if i < 0:
+            abs_dif.append(-i)
+        else:
+            abs_dif.append(i)
+    mae = sum(abs_dif) / len(abs_dif)
+    print()
+    print('Avg. Differences \t=\t%.4f Hartrees' % (avg_dif))
+    print('Mean Abs. Error  \t=\t%.4f Hartrees' % (mae))
+    print('Avg. Percentage E\t=\t%.4f Hartrees' % (avg_perc))
+
+
+def atomic_nn(xs: [],
+              ys: [],
+              model_save_dir="./results",
+              epochs=300,
+              learning_rate=1e-1):
+    xs, test_xs, ys, test_ys = prepare_data(xs, ys, 0.8)
+
     Gs_num = xs[0].size()[1] - 1
 
-    learning_rate = 1e-1
-    epochs = 300
     model = atomicNet(Gs_num)
     criterion = torch.nn.MSELoss(reduction='sum')
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
@@ -154,4 +193,23 @@ def atomic_nn(xs: [], ys: []):
             loss.backward()
             optimizer.step()
 
+    saveModel(model, path=model_save_dir)
+
+    with torch.no_grad():
+        model.eval()
+        differences = []
+        percentages = []
+        for n, x in enumerate(test_xs):
+            y = test_ys[n]
+            E_tot = 0
+            for atom in x:
+                E_i = model(atom)
+                E_tot += E_i
+            E_tot = E_tot[0]
+            dif = y - E_tot
+            differences.append(dif)
+            perc = abs(dif) / y
+            percentages.append(perc)
+
+    stats_results(differences, percentages)
     return

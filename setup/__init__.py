@@ -251,10 +251,15 @@ def build_ACSF_atom_subdivided(
     return G
 
 
-def collect_data(stop=1,
-                 path_sdf="data/gdb9.sdf",
-                 path_csv="data/gdb9.sdf.csv",
-                 progress=False):
+def collect_data(
+    stop=1,
+    path_sdf="data/gdb9.sdf",
+    path_csv="data/gdb9.sdf.csv",
+    progress=False,
+    Rc=6.0,
+    G2_params=[(0.4, 0.2), (0.6, 0.8), (0.6, 0.2), (0.8, 0.5)],
+    G4_params=[(0.4, 2, 1), (0.6, 2, 1), (0.6, 2, -1)],
+):
     """
     Collects downloaded qm9 data
     """
@@ -287,7 +292,10 @@ def collect_data(stop=1,
             carts.append(row)
         arr = np.array(carts)
 
-        G = build_ACSF_atom_subdivided(arr)
+        G = build_ACSF_atom_subdivided(arr,
+                                       G2_params=G2_params,
+                                       G4_params=G4_params,
+                                       Rc=Rc)
         xs.append(G)
         if progress:
             printProgressBar(i,
