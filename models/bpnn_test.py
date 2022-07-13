@@ -1,80 +1,36 @@
-# -*- coding: utf-8 -*-
-import random
 import torch
 from torch import nn
-import math
 import numpy as np
 from sklearn.model_selection import train_test_split
 from glob import glob
+import pickle
+import matplotlib.pyplot as plt
 
 
-def example():
+def rescale_targets(ys: []):
+    """
+    Rescales the target values to be smaller values
+    """
+    np_y = np.array(ys)
+    mu = np.mean(np_y)
+    std = np.std(np_y)
+    return [(i - mu) / std for i in ys], mu, std
 
-    class DynamicNet(torch.nn.Module):
 
-        def __init__(self):
-            """
-            In the constructor we instantiate five parameters and assign them as members.
-            """
-            super().__init__()
-            self.a = torch.nn.Parameter(torch.randn(()))
-            self.b = torch.nn.Parameter(torch.randn(()))
-            self.c = torch.nn.Parameter(torch.randn(()))
-            self.d = torch.nn.Parameter(torch.randn(()))
-            self.e = torch.nn.Parameter(torch.randn(()))
+def write_pickle(data, fname='data.pickle'):
+    with open(fname, 'wb') as handle:
+        pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-        def forward(self, x):
-            """
-            For the forward pass of the model, we randomly choose either 4, 5
-            and reuse the e parameter to compute the contribution of these orders.
 
-            Since each forward pass builds a dynamic computation graph, we can use normal
-            Python control-flow operators like loops or conditional statements when
-            defining the forward pass of the model.
-
-            Here we also see that it is perfectly safe to reuse the same parameter many
-            times when defining a computational graph.
-            """
-            y = self.a + self.b * x + self.c * x**2 + self.d * x**3
-            for exp in range(4, random.randint(4, 6)):
-                y += self.e * x**exp
-            return y
-
-        def string(self):
-            """
-            Just like any class in Python, you can also define custom method on PyTorch modules
-            """
-            return f'y = {self.a.item()} + {self.b.item()} x + {self.c.item()} x^2 + {self.d.item()} x^3 + {self.e.item()} x^4 ? + {self.e.item()} x^5 ?'
-
-    # Create Tensors to hold input and outputs.
-    x = torch.linspace(-math.pi, math.pi, 2000)
-    y = torch.sin(x)
-
-    # Construct our model by instantiating the class defined above
-    model = DynamicNet()
-
-    # Construct our loss function and an Optimizer. Training this strange model with
-    # vanilla stochastic gradient descent is tough, so we use momentum
-    criterion = torch.nn.MSELoss(reduction='sum')
-    optimizer = torch.optim.SGD(model.parameters(), lr=1e-8, momentum=0.9)
-    for t in range(30000):
-        # Forward pass: Compute predicted y by passing x to the model
-        y_pred = model(x)
-
-        # Compute and print loss
-        loss = criterion(y_pred, y)
-        if t % 2000 == 1999:
-            print(t, loss.item())
-
-        # Zero gradients, perform a backward pass, and update the weights.
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
-
-    print(f'Result: {model.string()}')
+def read_pickle(fname='data.pickle'):
+    with open(fname, 'rb') as handle:
+        return pickle.load(handle)
 
 
 def data_to_tensors(xs, ys):
+    """
+    Used to restructure data coming from setup for pytorch usage
+    """
     for n, i in enumerate(xs):
         i = np.float32(i)
         xs[n] = torch.from_numpy(i)
@@ -83,6 +39,9 @@ def data_to_tensors(xs, ys):
 
 
 def prepare_data(xs, ys, train_size=0.3):
+    """
+    Splits dataset into train/test with restructuring datatypes to tensors
+    """
     train_x, test_x, train_y, test_y = train_test_split(xs,
                                                         ys,
                                                         train_size=train_size,
@@ -94,6 +53,22 @@ def prepare_data(xs, ys, train_size=0.3):
     return train_x, test_x, train_y, test_y
 
 
+class elementNet(torch.nn.Module):
+    """
+    Contains the default element schematic
+    """
+
+    def __init__(self, Gs_num: int):
+        super().__init__()
+        self.el = nn.Sequential(
+            nn.Linear(Gs_num, 200),
+            nn.ReLU(),
+            nn.Linear(200, 100),
+            nn.ReLU(),
+            nn.Linear(100, 1),
+        )
+
+
 class atomicNet(torch.nn.Module):
     """
     Constructs NN for H, C, N, O, and F individually
@@ -101,6 +76,11 @@ class atomicNet(torch.nn.Module):
 
     def __init__(self, Gs_num: int):
         super().__init__()
+        # self.h = elementNet(Gs_num)
+        # self.c = elementNet(Gs_num)
+        # self.n = elementNet(Gs_num)
+        # self.o = elementNet(Gs_num)
+        # self.f = elementNet(Gs_num)
         self.h = nn.Sequential(
             nn.Linear(Gs_num, 2 * Gs_num),
             nn.Linear(2 * Gs_num, Gs_num),
@@ -136,6 +116,9 @@ class atomicNet(torch.nn.Module):
 
 
 def saveModel(model, path="./results"):
+    """
+    Saves current model without overwriting previous models
+    """
     ms = glob(path + "/t*")
     save_path = path + "/t1"
     if len(ms) > 0:
@@ -148,7 +131,9 @@ def saveModel(model, path="./results"):
 
 
 def stats_results(differences: [], percentages: []):
-    print(differences, percentages)
+    """
+    Returns mean differences, mean percentages, and mean absolute error.
+    """
     avg_dif = sum(differences) / len(differences)
     avg_perc = sum(percentages) / len(percentages)
     abs_dif = []
@@ -164,11 +149,64 @@ def stats_results(differences: [], percentages: []):
     print('Avg. Percentage E\t=\t%.4f Hartrees' % (avg_perc))
 
 
+def test_atomic_nn(xs: [],
+                   ys: [],
+                   model_save_dir="./results",
+                   model_name="t2",
+                   Gs_num=30):
+    """
+    Tests a model without training. Use the same ACSF parameters as the model
+    being used.
+    """
+    xs, test_xs, ys, test_ys = prepare_data(xs, ys, 0.8)
+    model = atomicNet(Gs_num)
+    model.load_state_dict(torch.load("%s/%s" % (model_save_dir, model_name)))
+    model.eval()
+    differences = []
+    percentages = []
+    E_model, E_target = [], []
+    for n, x in enumerate(test_xs):
+        y = test_ys[n]
+        E_tot = 0
+        for atom in x:
+            E_i = model(atom)
+            E_tot += E_i
+        E_tot = E_tot[0]
+        E_model.append(E_tot)
+        E_target.append(y)
+
+        dif = y - E_tot
+        differences.append(dif)
+        perc = abs(dif) / y
+        percentages.append(perc)
+
+    E_target = [float(i) for i in E_target]
+    E_model = [float(i) for i in E_model]
+    x = [i - 3200 for i in range(3500)]
+
+    fig = plt.figure(dpi=400)
+    plt.plot(E_target, E_model, 'r.', linewidth=0.1)
+    plt.plot(x, x, 'k')
+    plt.xlabel('Target Energy')
+    plt.ylabel('Predicted Energy')
+    plt.xlim([-3000, 0])
+    plt.ylim([-3000, 0])
+    plt.savefig("bpnn_results.png")
+
+    stats_results(differences, percentages)
+    return
+
+
 def atomic_nn(xs: [],
               ys: [],
               model_save_dir="./results",
               epochs=300,
               learning_rate=1e-1):
+    """
+    Constructs a new model from a dataset of the structure...
+    xs = [np.array[[atomic number, Gs...]]]
+    ys = []
+    """
     xs, test_xs, ys, test_ys = prepare_data(xs, ys, 0.8)
 
     Gs_num = xs[0].size()[1] - 1
@@ -176,6 +214,8 @@ def atomic_nn(xs: [],
     model = atomicNet(Gs_num)
     criterion = torch.nn.MSELoss(reduction='sum')
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    print("starting training...")
+    ten_p = epochs // 10
     for epoch in range(epochs):
         for n, x in enumerate(xs):
             y = ys[n]
@@ -185,10 +225,10 @@ def atomic_nn(xs: [],
                 E_tot += E_i
             E_tot = E_tot[0]
             loss = criterion(E_tot, y)
-            if epoch % 50 == 0:
-                print(epoch, loss.item())
+            if (epoch + 1) % ten_p == 0:
+                print(epoch + 1, loss.item())
                 # print(E_tot.size(), y.size())
-                print(E_tot, y)
+                print("\t", float(E_tot), float(y))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()

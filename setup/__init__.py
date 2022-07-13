@@ -16,9 +16,13 @@ reading data inspired by zatayue/MXMNet
 
 
 def cut_off_cos(R_ij, R_c):
+    """
+    Cut off function with cosine
+    """
     if R_ij > R_c:
         return 0
-    return 0.5 * math.cos(math.pi * R_ij / R_c + 1)
+    # return 0.5 * math.cos(math.pi * R_ij / R_c + 1)
+    return 0.5 * (math.cos(math.pi * R_ij / R_c) + 1)
 
 
 def distance_3d(r1, r2):
@@ -26,6 +30,9 @@ def distance_3d(r1, r2):
 
 
 def rad_G_1(cut_off_func, i, carts, R_c):
+    """
+    first implementation of G_1 ACSF
+    """
     G_i_1 = 0
     for j in range(len(carts)):
         if i == j:
@@ -36,6 +43,9 @@ def rad_G_1(cut_off_func, i, carts, R_c):
 
 
 def rad_G_2(cut_off_func, i, carts, R_c, R_s, eta):
+    """
+    first implementation of G_2 ACSF
+    """
     G_i_2 = 0
     for j in range(len(carts)):
         if i == j:
@@ -46,6 +56,9 @@ def rad_G_2(cut_off_func, i, carts, R_c, R_s, eta):
 
 
 def build_ACSF_dscribe():
+    """
+    dscribe playing around zone
+    """
     # symbols = {'H': 1, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
     R_c = 6.0
     acsf = ACSF(
@@ -68,6 +81,9 @@ def build_ACSF_dscribe():
 
 
 def remove_extra_wb(line: str):
+    """
+    Removes extra whitespace in a string for better splitting.
+    """
     line = line.replace("    ",
                         " ").replace("   ", " ").replace("  ", " ").replace(
                             "  ", " ").replace("\n ", "\n")
@@ -75,6 +91,10 @@ def remove_extra_wb(line: str):
 
 
 def convert_str_carts_np_carts(carts: str):
+    """
+    This will take Cartesian coordinates as a string and convert it to a numpy
+    array.
+    """
     carts = remove_extra_wb(carts)
     carts = carts.split("\n")
     if carts[0] == "":
@@ -91,6 +111,9 @@ def convert_str_carts_np_carts(carts: str):
 
 
 def get_3d_angle(r1, r2, r3):
+    """
+    Acquires angle between three points in Cartesian coordinates.
+    """
     r21 = r1 - r2
     r23 = r3 - r2
 
@@ -105,6 +128,9 @@ def build_ACSF(
         G4_params=[(0.4, 2, 1), (0.6, 2, 1),
                    (0.6, 2, -1)],  # (eta, zeta, lambda)
         Rc=6.0):
+    """
+    First attempt to build ACSF's
+    """
     carts = convert_str_carts_np_carts(carts)
     n = len(carts)
     G1 = np.zeros((n, 1))
@@ -158,6 +184,9 @@ def build_ACSF(
 
 
 def element_subvision(elements: [int]):
+    """
+    Generates the element dictionary for value lookups
+    """
     el_dc = {}
     for n, i in enumerate(elements):
         el_dc[i] = n
@@ -165,6 +194,9 @@ def element_subvision(elements: [int]):
 
 
 def build_G1(n: int, carts: np.array, el_dc: {}, Rc: float):
+    """
+    Constructs radial ACSF based only on distance
+    """
     el_n = len(el_dc)
     G1 = np.zeros((n, 1 * el_n))
     for i in range(n):
@@ -180,6 +212,9 @@ def build_G1(n: int, carts: np.array, el_dc: {}, Rc: float):
 
 def build_G2(n: int, carts: np.array, el_dc: {}, Rc: float,
              G2_params: [tuple]):
+    """
+    Constructs Gaussian radial ACSF with eta and Rc parameters
+    """
     el_n = len(el_dc)
     G2 = np.zeros((n, len(G2_params) * el_n))
     for i in range(n):
@@ -196,6 +231,10 @@ def build_G2(n: int, carts: np.array, el_dc: {}, Rc: float,
 
 def build_G4(n: int, carts: np.array, el_dc: {}, Rc: float,
              G4_params: [tuple]):
+    """
+    Constructs angular ACSF with eta, zeta, and lambda parameters.
+    """
+
     el_n = len(el_dc)
     G4 = np.zeros((n, len(G4_params) * el_n))
     for i in range(n):
@@ -227,6 +266,10 @@ def build_ACSF_atom_subdivided(
                    (0.6, 2, -1)],  # (eta, zeta, lambda)
         Rc=6.0,
         verbose=False):
+    """
+    Constructs ACSF functions for G_1, G_2, and G_4 from Cartesian coordinates
+    that include atomic number in the first column.
+    """
     n = len(carts)
     el_dc = element_subvision(elements)
 
@@ -261,7 +304,7 @@ def collect_data(
     G4_params=[(0.4, 2, 1), (0.6, 2, 1), (0.6, 2, -1)],
 ):
     """
-    Collects downloaded qm9 data
+    Collects downloaded qm9 data and constructs ACSF
     """
     # types = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
     # symbols = {'H': 1, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
