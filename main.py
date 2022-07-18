@@ -1,13 +1,12 @@
+from models import bpnn_test
 from setup import collect_data
 import pprint
-from models import bpnn_test
 from models.bpnn_test import write_pickle, read_pickle
 import os
 from models.structs import paths, acsf_Gs, acsf_model, results, nn_props
-import json
+
 
 pp = pprint.PrettyPrinter(indent=4)
-
 
 def bpnn(acsf_model: acsf_model, train=True):
     if not os.path.exists(acsf_model.paths.data_path):
@@ -129,7 +128,7 @@ def read_model(acsf_model: acsf_model):
 
 def main():
     # model_name = "t2"
-    model_name = "t2"
+    model_name = "t3"
     G2_params = [
         (0.4, 0.2),
         (0.6, 0.2),
@@ -147,7 +146,7 @@ def main():
     )
     nn_p = nn_props(
         [30, 200, 100, 20, 1],
-        epochs=300,
+        epochs=400,
         learning_rate=0.001,
         batch_size=32,
     )
@@ -158,7 +157,7 @@ def main():
     )
     m = acsf_model(
         model_name,
-        num_molecules=10000,
+        num_molecules=1000,
         acsf_Gs=Gs,
         paths=p,
         nn_props=nn_p,

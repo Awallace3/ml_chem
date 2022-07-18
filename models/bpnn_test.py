@@ -1,6 +1,7 @@
 import torch
 import torch.nn.functional as F
 from torch import nn
+from torch.autograd import Variable
 import numpy as np
 from sklearn.model_selection import train_test_split
 from glob import glob
@@ -58,22 +59,6 @@ def prepare_data(xs, ys, train_size=0.3):
     return train_x, test_x, train_y, test_y
 
 
-# class elementNet(torch.nn.Module):
-#     """
-#     Contains the default element schematic
-#     """
-#
-#     def __init__(self, Gs_num: int):
-#         super().__init__()
-#         self.el = nn.Sequential(
-#             nn.Linear(Gs_num, 200),
-#             nn.ReLU(),
-#             nn.Linear(200, 100),
-#             nn.ReLU(),
-#             nn.Linear(100, 1),
-#         )
-
-
 def elementNet(Gs_num):
     """
     Contains the default element schematic
@@ -101,31 +86,6 @@ class atomicNet(torch.nn.Module):
         self.n = elementNet(Gs_num)
         self.o = elementNet(Gs_num)
         self.f = elementNet(Gs_num)
-        # self.h = nn.Sequential(
-        #     nn.Linear(Gs_num, 100),
-        #     nn.Linear(100, 80),
-        #     nn.Linear(Gs_num, 1),
-        # )
-        # self.c = nn.Sequential(
-        #     nn.Linear(Gs_num, 2 * Gs_num),
-        #     nn.Linear(2 * Gs_num, Gs_num),
-        #     nn.Linear(Gs_num, 1),
-        # )
-        # self.n = nn.Sequential(
-        #     nn.Linear(Gs_num, 2 * Gs_num),
-        #     nn.Linear(2 * Gs_num, Gs_num),
-        #     nn.Linear(Gs_num, 1),
-        # )
-        # self.o = nn.Sequential(
-        #     nn.Linear(Gs_num, 2 * Gs_num),
-        #     nn.Linear(2 * Gs_num, Gs_num),
-        #     nn.Linear(Gs_num, 1),
-        # )
-        # self.f = nn.Sequential(
-        #     nn.Linear(Gs_num, 2 * Gs_num),
-        #     nn.Linear(2 * Gs_num, Gs_num),
-        #     nn.Linear(Gs_num, 1),
-        # )
         self.el = {1: self.h, 6: self.c, 7: self.n, 8: self.o, 9: self.f}
 
     def forward(self, x):
@@ -145,26 +105,6 @@ def saveModel_ACSF_model(
     """
 
     save_path = acsf_model.paths.model_path
-    torch.save(model.state_dict(), save_path)
-    with open(save_path + "_scale", 'w') as fp:
-        for i in scales:
-            fp.write(str(i))
-            fp.write('\n')
-    return
-
-
-def saveModel(model, path="./results", scales=[1, 1]):
-    """
-    Saves current model without overwriting previous models
-    """
-    ms = glob(path + "/t*")
-    ms = [i for i in ms if "_" not in i and "." not in i]
-    save_path = path + "/t1"
-    if len(ms) > 0:
-        cnt = [int(i.split("/t")[-1]) for i in ms]
-        v = max(cnt) + 1
-        save_path = path + "/t%d" % v
-        print('model saved to %s' % save_path)
     torch.save(model.state_dict(), save_path)
     with open(save_path + "_scale", 'w') as fp:
         for i in scales:
@@ -200,105 +140,11 @@ def stats_results(differences: [], percentages: [], acsf_obj: acsf_model):
     return
 
 
-def stats_results_no_obj(differences: [], percentages: []):
-    """
-    Returns mean differences, mean percentages, and mean absolute error.
-    """
-    max_d = max(differences)
-    print(differences)
-    avg_dif = sum(differences) / len(differences)
-    abs_dif = []
-    for i in differences:
-        if i < 0:
-            abs_dif.append(-i)
-        else:
-            abs_dif.append(i)
-    mae = sum(abs_dif) / len(abs_dif)
-    print()
-    print('Avg. Differences \t=\t%.4f Hartrees' % (avg_dif))
-    print('Mean Abs. Error  \t=\t%.4f Hartrees' % (mae))
-    print('Max Error        \t=\t%.4f Hartrees' % (max_d))
-
-
 def read_scales(path):
     with open(path, 'r') as f:
         data = f.readlines()
     data = [float(i.replace("\n", "")) for i in data]
     return data
-
-
-def test_atomic_nn_no_obj(xs: [],
-                          ys: [],
-                          model_save_dir="./results",
-                          model_name="t2",
-                          Gs_num=30,
-                          scales=True):
-    """
-    Tests a model without training. Use the same ACSF parameters as the model
-    being used.
-    """
-    # rescales to have mean=0 and std=1
-    # ys, mu, std = rescale_targets(ys)
-    # -378.4653
-    # mu, std = 0.0, 1.0
-    if scales:
-        scale_path = "%s/%s_scale" % (model_save_dir, model_name)
-        d = read_scales(scale_path)
-        mu, std = d[0], d[1]
-        scales = [mu, std]
-
-    xs, test_xs, ys, test_ys = prepare_data(xs, ys, 0.8)
-
-    # testing scaling
-    # target_scaler = MinMaxScaler()
-    # ys = np.array(ys).reshape(-1, 1)
-    # target_scaler.fit(ys)
-    # ys = target_scaler.transform(ys)
-    # ys = [torch.tensor(i, dtype=torch.float32) for i in ys]
-
-    model = atomicNet(Gs_num)
-    model.load_state_dict(torch.load("%s/%s" % (model_save_dir, model_name)))
-
-    with torch.no_grad():
-        model.eval()
-        differences = []
-        percentages = []
-        E_model, E_target = [], []
-        for n, x in enumerate(test_xs):
-            y = test_ys[n]
-            E_tot = 0
-            for atom in x:
-                E_i = model(atom)
-                E_tot += E_i
-            # testing
-            E_tot = E_tot[0]
-            # E_tot = target_scaler.inverse_transform(E_tot.reshape(1, -1))
-            # print(E_tot, y)
-            if scales:
-                E_tot = E_tot * std + mu
-            E_model.append(E_tot)
-            E_target.append(y)
-
-            dif = y - E_tot
-            differences.append(dif)
-            perc = abs(dif) / y
-            percentages.append(perc)
-
-        E_target = [float(i) for i in E_target]
-        E_model = [float(i) for i in E_model]
-        x = [i - 3200 for i in range(3500)]
-
-    fig = plt.figure(dpi=400)
-    plt.plot(E_target, E_model, 'r.', linewidth=0.1)
-    plt.plot(x, x, 'k')
-    plt.xlabel('Target Energy')
-    plt.ylabel('Predicted Energy')
-    # plt.xlim([-3000, 0])
-    # plt.ylim([-3000, 0])
-    plt.savefig("bpnn_results.png")
-
-    stats_results_no_obj(differences, percentages)
-    return
 
 
 def test_atomic_nn(
@@ -312,14 +158,15 @@ def test_atomic_nn(
     being used.
     """
     # rescales to have mean=0 and std=1
-    if scales:
-        scale_path = "%s_scale" % (acsf_obj.paths.model_path)
-        d = read_scales(scale_path)
-        mu, std = d[0], d[1]
-        scales = [mu, std]
+    # if scales:
+    #     scale_path = "%s_scale" % (acsf_obj.paths.model_path)
+    #     d = read_scales(scale_path)
+    #     mu, std = d[0], d[1]
+    #     scales = [mu, std]
 
     xs, test_xs, ys, test_ys = prepare_data(xs, ys, 0.8)
     Gs_num = xs[0].size()[1] - 1
+    print(xs, ys)
 
     model = atomicNet(Gs_num)
     model.load_state_dict(torch.load(acsf_obj.paths.model_path))
@@ -336,8 +183,8 @@ def test_atomic_nn(
                 E_i = model(atom)
                 E_tot += E_i
             E_tot = E_tot[0]
-            if scales:
-                E_tot = E_tot * std + mu
+            # if scales:
+            #     E_tot = E_tot * std + mu
             E_model.append(E_tot)
             E_target.append(y)
 
@@ -363,43 +210,70 @@ def test_atomic_nn(
     return
 
 
-def atomic_nn_no_object(
-    xs: [],
-    ys: [],
-    model_save_dir="./results",
-    epochs=300,
-    learning_rate=1e-1,
-    batch_size=32,
-):
+# for xs, ragged inputs
+# - j
+
+# 1. compute error each epoch, average training errors from
+# epoch
+# 2. eval validation set each epoch
+# 3. savemodel when validation error is lowest
+# 4.
+
+
+def elementNetMinimizeInput(Gs_num):
     """
-    Constructs a new model from a dataset of the structure...
-    xs = [np.array[[atomic number, Gs...]]]
-    ys = []
+    Contains the default element schematic
     """
-    ys, mu, std = rescale_targets(ys)
-    scales = [mu, std]
-    # -378.4653
-    # mu, std = 0.0, 1.0
+    return nn.Sequential(nn.Linear(Gs_num, 1), )
 
-    xs, test_xs, ys, test_ys = prepare_data(xs, ys, 0.8)
 
-    # target_scaler = MinMaxScaler()
-    # ys = np.array(ys).reshape(-1, 1)
-    # target_scaler.fit(ys)
-    # ys = target_scaler.transform(ys)
-    # ys = [torch.tensor(i, dtype=torch.float32) for i in ys]
-    # ys[n] = torch.tensor(ys[n], dtype=torch.float32)
-    # test_ys = target_scaler.transform(test_ys)
+class atomicNetMinimizeInput(torch.nn.Module):
+    """
+    Constructs NN for H, C, N, O, and F individually
+    """
 
-    Gs_num = xs[0].size()[1] - 1
+    def __init__(self, Gs_num: int):
+        super().__init__()
+        self.h = elementNetMinimizeInput(Gs_num)
+        self.c = elementNetMinimizeInput(Gs_num)
+        self.n = elementNetMinimizeInput(Gs_num)
+        self.o = elementNetMinimizeInput(Gs_num)
+        self.f = elementNetMinimizeInput(Gs_num)
+        self.el = {1: self.h, 6: self.c, 7: self.n, 8: self.o, 9: self.f}
 
+    def forward(self, x):
+        k = int(x[0])
+        v = self.el[k]
+        v = v(x[1:])
+        return v
+
+
+class linearRegression(torch.nn.Module):
+
+    def __init__(self, inputSize, outputSize):
+        super(linearRegression, self).__init__()
+        self.linear = torch.nn.Linear(inputSize, outputSize)
+
+    def forward(self, x):
+        out = self.linear(x)
+        return out
+
+
+def minimize_error(xs: [], ys: []):
+    """
+    Minimizes error before neural network training.
+    """
+    print(type(xs), type(xs[0]), np.shape(xs[0]))
+    print(type(ys), type(ys[0]))
+    xs, test_xs, ys, test_ys = prepare_data(xs, ys, 1)
+    print(len(xs), len(test_xs))
     model = atomicNet(Gs_num)
     criterion = torch.nn.MSELoss(reduction='sum')
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
-    print("starting training...")
-    ten_p = epochs // 10
-    print("Printing every %d epochs" % ten_p)
-    for epoch in range(epochs):
+    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+    batch_size = 1
+    E_totals = torch.zeros(batch_size)
+    local_ys = torch.zeros(batch_size)
+    for epoch in range(10):
         for n, x in enumerate(xs):
             y = ys[n]
             E_tot = 0
@@ -407,42 +281,44 @@ def atomic_nn_no_object(
                 E_i = model(atom)
                 E_tot += E_i
             E_tot = E_tot[0]
-            loss = criterion(E_tot, y)
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-        if (epoch + 1) % ten_p == 0 and loss:
-            print(epoch + 1, loss.item())
-            # print(E_tot.size(), y.size())
-            print("\t", float(E_tot), float(y))
-
-    saveModel(model, path=model_save_dir, scales=scales)
+            E_totals[batch] = E_tot
+            local_ys[batch] = y
+            batch += 1
+            if batch == batch_size:
+                batch = 0
+                # loss = criterion(E_tot, y)
+                loss = criterion(E_totals, local_ys)
+                optimizer.zero_grad()
+                loss.backward()
+                optimizer.step()
+                E_totals = torch.zeros(batch_size)
+                local_ys = torch.zeros(batch_size)
 
     with torch.no_grad():
         model.eval()
-        differences = []
-        percentages = []
-        for n, x in enumerate(test_xs):
+        Es = []
+        for n, x in enumerate(xs):
             y = test_ys[n]
             E_tot = 0
             for atom in x:
                 E_i = model(atom)
                 E_tot += E_i
             E_tot = E_tot[0]
+            Es.append([E_tot, y])
 
-            # mean = 0, std = 1
-            E_tot = E_tot * std + mu
-            y = y * std + mu
-            # E_tot = target_scaler.inverse_transform(E_tot)
-            # y = y * std + mu
+    return Es
 
-            dif = y - E_tot
-            print(E_tot, y)
-            differences.append(dif)
-            perc = abs(dif) / y
-            percentages.append(perc)
 
-    stats_results_no_obj(differences, percentages)
+
+    # 1. count number elements in each molecule
+    # 2. weight associated with each element
+    # E = \Sigma_i^N(w_i*N_i)
+    # linear regression minimization
+    # equivalent to single linear layer
+    # gives optimum weights
+    # take linear model, and precompute for all molecules and starting point is energy that comes out
+    # save and subtract
+
     return
 
 
@@ -465,15 +341,9 @@ def atomic_nn(
     # -378.4653
     # mu, std = 0.0, 1.0
 
+    ys = minimize_error(xs, ys)
     xs, test_xs, ys, test_ys = prepare_data(xs, ys, 0.8)
-
-    # target_scaler = MinMaxScaler()
-    # ys = np.array(ys).reshape(-1, 1)
-    # target_scaler.fit(ys)
-    # ys = target_scaler.transform(ys)
-    # ys = [torch.tensor(i, dtype=torch.float32) for i in ys]
-    # ys[n] = torch.tensor(ys[n], dtype=torch.float32)
-    # test_ys = target_scaler.transform(test_ys)
+    return
 
     Gs_num = xs[0].size()[1] - 1
 
@@ -490,6 +360,8 @@ def atomic_nn(
     for epoch in range(epochs):
         for n, x in enumerate(xs):
             y = ys[n]
+            # E_ref = current_y
+            # want... y = E_ref_target - E_linear_model
             E_tot = 0
             for atom in x:
                 E_i = model(atom)
@@ -508,10 +380,11 @@ def atomic_nn(
                 E_totals = torch.zeros(batch_size)
                 local_ys = torch.zeros(batch_size)
 
-        if (epoch + 1) % ten_p == 0 and loss:
+        # if (epoch + 1) % ten_p == 0 and loss:
+        if (epoch + 1) % 5 == 0 and loss:
             print(epoch + 1, loss.item())
             # print(E_tot.size(), y.size())
-            print("\t", float(E_tot), float(y))
+            # print("\t", float(E_tot), float(y))
 
     saveModel_ACSF_model(model, acsf_obj, scales=scales)
 

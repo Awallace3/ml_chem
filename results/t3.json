@@ -1,0 +1,56 @@
+{
+    "name": "t3",
+    "num_molecules": 100000,
+    "acsf_Gs": {
+        "G2_params": [
+            [
+                0.4,
+                0.2
+            ],
+            [
+                0.6,
+                0.2
+            ]
+        ],
+        "G4_params": [
+            [
+                0.4,
+                2,
+                1
+            ],
+            [
+                0.6,
+                2,
+                1
+            ],
+            [
+                0.6,
+                2,
+                -1
+            ]
+        ],
+        "Rc": 5.0
+    },
+    "paths": {
+        "data_path": "data/t3.pickle",
+        "model_path": "results/t3",
+        "plot_path": "plots/t3"
+    },
+    "results": {
+        "avg_dif": 0,
+        "mae": 0,
+        "max_d": 0
+    },
+    "nn_props": {
+        "nodes": [
+            30,
+            200,
+            100,
+            20,
+            1
+        ],
+        "batch_size": 32,
+        "epochs": 400,
+        "learning_rate": 0.001
+    }
+}
