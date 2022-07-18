@@ -6,6 +6,7 @@ class paths():
     data_path: str = "data/t0.pickle"
     model_path: str = "results/t0"
     plot_path: str = "plots/t0.png"
+    linear_model: str = "results/t0_linear"
 
 
 @dataclass

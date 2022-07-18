@@ -1,8 +1,8 @@
 from models import bpnn_test
 from setup import collect_data
 import pprint
-from models.bpnn_test import write_pickle, read_pickle
 import os
+from models.bpnn_test import write_pickle, read_pickle
 from models.structs import paths, acsf_Gs, acsf_model, results, nn_props
 
 
@@ -128,7 +128,7 @@ def read_model(acsf_model: acsf_model):
 
 def main():
     # model_name = "t2"
-    model_name = "t3"
+    model_name = "t4"
     G2_params = [
         (0.4, 0.2),
         (0.6, 0.2),
@@ -145,19 +145,22 @@ def main():
         Rc,
     )
     nn_p = nn_props(
-        [30, 200, 100, 20, 1],
-        epochs=400,
+        nodes=[30, 200, 100, 20, 1],
+        epochs=100,
         learning_rate=0.001,
         batch_size=32,
     )
+    # t0 = 1e4
+    # t2 = 1e6
     p = paths(
         data_path="data/t0.pickle",
         model_path="results/%s" % model_name,
+        linear_model="results/%s_linear" % model_name,
         plot_path="plots/%s" % model_name,
     )
     m = acsf_model(
         model_name,
-        num_molecules=1000,
+        num_molecules=10000,
         acsf_Gs=Gs,
         paths=p,
         nn_props=nn_p,

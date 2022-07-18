@@ -10,6 +10,7 @@ import matplotlib.pyplot as plt
 from sklearn.preprocessing import MinMaxScaler
 from .structs import acsf_model
 import json
+import os
 import dataclasses
 
 
@@ -44,6 +45,11 @@ def data_to_tensors(xs, ys):
     return xs, ys
 
 
+def prepare_minimization(xs, ys):
+    xs, ys = data_to_tensors(xs, ys)
+    return xs, ys
+
+
 def prepare_data(xs, ys, train_size=0.3):
     """
     Splits dataset into train/test with restructuring datatypes to tensors
@@ -64,13 +70,13 @@ def elementNet(Gs_num):
     Contains the default element schematic
     """
     return nn.Sequential(
-        nn.Linear(Gs_num, 200),
+        nn.Linear(Gs_num, 64),
         nn.ReLU(),
-        nn.Linear(200, 100),
+        nn.Linear(64, 64),
         nn.ReLU(),
-        nn.Linear(100, 20),
+        nn.Linear(64, 32),
         nn.ReLU(),
-        nn.Linear(20, 1),
+        nn.Linear(32, 1),
     )
 
 
@@ -95,6 +101,17 @@ class atomicNet(torch.nn.Module):
         return v
 
 
+def saveModel_linear(
+    model,
+    acsf_model: acsf_model,
+):
+    """saves linear piece for regression"""
+
+    save_path = acsf_model.paths.linear_model
+    torch.save(model.state_dict(), save_path)
+    return
+
+
 def saveModel_ACSF_model(
     model,
     acsf_model: acsf_model,
@@ -106,10 +123,10 @@ def saveModel_ACSF_model(
 
     save_path = acsf_model.paths.model_path
     torch.save(model.state_dict(), save_path)
-    with open(save_path + "_scale", 'w') as fp:
-        for i in scales:
-            fp.write(str(i))
-            fp.write('\n')
+    # with open(save_path + "_scale", 'w') as fp:
+    #     for i in scales:
+    #         fp.write(str(i))
+    #         fp.write('\n')
     return
 
 
@@ -259,21 +276,53 @@ class linearRegression(torch.nn.Module):
         return out
 
 
-def minimize_error(xs: [], ys: []):
+def minimize_error(xs: [], ys: [], acsf_obj: acsf_model):
     """
     Minimizes error before neural network training.
     """
-    print(type(xs), type(xs[0]), np.shape(xs[0]))
-    print(type(ys), type(ys[0]))
-    xs, test_xs, ys, test_ys = prepare_data(xs, ys, 1)
-    print(len(xs), len(test_xs))
-    model = atomicNet(Gs_num)
-    criterion = torch.nn.MSELoss(reduction='sum')
-    optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-    batch_size = 1
-    E_totals = torch.zeros(batch_size)
-    local_ys = torch.zeros(batch_size)
-    for epoch in range(10):
+    # print(type(xs), type(xs[0]), np.shape(xs[0]))
+    # print(type(ys), type(ys[0]))
+    print('Number of Molecules:', len(xs))
+    xs, ys = prepare_minimization(xs, ys)
+    Gs_num = xs[0].size()[1] - 1
+    if not os.path.exists(acsf_obj.paths.linear_model):
+        model = atomicNet(Gs_num)
+        criterion = torch.nn.MSELoss(reduction='sum')
+        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
+        batch_size = 1
+        batch = 0
+        E_totals = torch.zeros(batch_size)
+        local_ys = torch.zeros(batch_size)
+        for epoch in range(1):
+            print("linear")
+            for n, x in enumerate(xs):
+                y = ys[n]
+                E_tot = 0
+                for atom in x:
+                    E_i = model(atom)
+                    E_tot += E_i
+                E_tot = E_tot[0]
+                E_totals[batch] = E_tot
+                local_ys[batch] = y
+                batch += 1
+                if batch == batch_size:
+                    batch = 0
+                    # loss = criterion(E_tot, y)
+                    loss = criterion(E_totals, local_ys)
+                    optimizer.zero_grad()
+                    loss.backward()
+                    optimizer.step()
+                    E_totals = torch.zeros(batch_size)
+                    local_ys = torch.zeros(batch_size)
+        saveModel_linear(model, acsf_obj)
+    else:
+        print("loading model from ", acsf_obj.paths.linear_model)
+        model = atomicNet(Gs_num=Gs_num)
+        model.load_state_dict(torch.load(acsf_obj.paths.linear_model))
+
+    with torch.no_grad():
+        model.eval()
+        Es = []
         for n, x in enumerate(xs):
             y = ys[n]
             E_tot = 0
@@ -281,34 +330,9 @@ def minimize_error(xs: [], ys: []):
                 E_i = model(atom)
                 E_tot += E_i
             E_tot = E_tot[0]
-            E_totals[batch] = E_tot
-            local_ys[batch] = y
-            batch += 1
-            if batch == batch_size:
-                batch = 0
-                # loss = criterion(E_tot, y)
-                loss = criterion(E_totals, local_ys)
-                optimizer.zero_grad()
-                loss.backward()
-                optimizer.step()
-                E_totals = torch.zeros(batch_size)
-                local_ys = torch.zeros(batch_size)
-
-    with torch.no_grad():
-        model.eval()
-        Es = []
-        for n, x in enumerate(xs):
-            y = test_ys[n]
-            E_tot = 0
-            for atom in x:
-                E_i = model(atom)
-                E_tot += E_i
-            E_tot = E_tot[0]
-            Es.append([E_tot, y])
-
+            # [linear, target, (target - linear)]
+            Es.append([E_tot, y, y - E_tot])
     return Es
-
-
 
     # 1. count number elements in each molecule
     # 2. weight associated with each element
@@ -336,14 +360,8 @@ def atomic_nn(
     learning_rate = acsf_obj.nn_props.learning_rate
     batch_size = acsf_obj.nn_props.batch_size
 
-    ys, mu, std = rescale_targets(ys)
-    scales = [mu, std]
-    # -378.4653
-    # mu, std = 0.0, 1.0
-
-    ys = minimize_error(xs, ys)
+    ys = minimize_error(xs, ys, acsf_obj)
     xs, test_xs, ys, test_ys = prepare_data(xs, ys, 0.8)
-    return
 
     Gs_num = xs[0].size()[1] - 1
 
@@ -351,15 +369,19 @@ def atomic_nn(
     criterion = torch.nn.MSELoss(reduction='sum')
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     print("starting training...")
-    ten_p = epochs // 10
-    print("Printing every %d epochs" % ten_p)
     E_totals = torch.zeros(batch_size)
     local_ys = torch.zeros(batch_size)
-    print(E_totals)
     batch = 0
+    print("Epoch,\tTraining E,\t Validation E")
+
     for epoch in range(epochs):
+        train_errors = np.zeros((len(xs)))
+        train_errors_total = np.zeros((epochs))
+        test_errors = np.zeros((len(xs)))
+        test_errors_total = np.zeros((epochs))
         for n, x in enumerate(xs):
-            y = ys[n]
+            # y = ys[n]
+            dif = ys[n][2]
             # E_ref = current_y
             # want... y = E_ref_target - E_linear_model
             E_tot = 0
@@ -368,7 +390,8 @@ def atomic_nn(
                 E_tot += E_i
             E_tot = E_tot[0]
             E_totals[batch] = E_tot
-            local_ys[batch] = y
+            local_ys[batch] = dif
+            train_errors[n] = criterion(E_tot, dif).item()
             batch += 1
             if batch == batch_size:
                 batch = 0
@@ -380,14 +403,38 @@ def atomic_nn(
                 E_totals = torch.zeros(batch_size)
                 local_ys = torch.zeros(batch_size)
 
-        # if (epoch + 1) % ten_p == 0 and loss:
-        if (epoch + 1) % 5 == 0 and loss:
-            print(epoch + 1, loss.item())
-            # print(E_tot.size(), y.size())
-            # print("\t", float(E_tot), float(y))
+        train_e = np.sum(train_errors) / len(train_errors)
+        train_errors_total[epoch] = train_e
+        with torch.no_grad():
+            model.eval()
+            for n, x in enumerate(test_xs):
+                y = test_ys[n]
+                E_tot = 0
+                for atom in x:
+                    E_i = model(atom)
+                    E_tot += E_i
+                E_tot = E_tot[0]
+                train_errors[n] = criterion(E_tot, dif).item()
+            test_e = np.sum(train_errors) / len(train_errors)
+            train_errors_total[epoch] = test_e
+            for i in train_errors_total:
+                if i != 0 and test_e < i:
+                    print("\nSaving Model\n")
+                    saveModel_ACSF_model(model, acsf_obj, scales=scales)
+        print("{:d},\t{:e},\t {:e}".format(epoch + 1, train_e, test_e))
 
-    saveModel_ACSF_model(model, acsf_obj, scales=scales)
+        # if (epoch + 1) % 1 == 0 and loss:
+        #     print('\tEpoch Loss:', epoch + 1, loss.item())
 
+    e_x = range(epochs)
+    fig = plt.figure(dpi=400)
+    plt.plot(train_errors_total, e_x, '-k', label="Train Errors")
+    plt.plot(test_errors_total, e_x, '-k', label="Train Errors")
+    plt.xlabel('Error')
+    plt.ylabel('Epochs')
+    plt.legend()
+    plt.savefig(acsf_obj.paths.plot_path)
+    return
     with torch.no_grad():
         model.eval()
         differences = []
@@ -399,15 +446,7 @@ def atomic_nn(
                 E_i = model(atom)
                 E_tot += E_i
             E_tot = E_tot[0]
-
-            # mean = 0, std = 1
-            E_tot = E_tot * std + mu
-            y = y * std + mu
-            # E_tot = target_scaler.inverse_transform(E_tot)
-            # y = y * std + mu
-
             dif = y - E_tot
-            # print(E_tot, y)
             differences.append(dif)
             perc = abs(dif) / y
             percentages.append(perc)
