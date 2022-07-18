@@ -128,7 +128,7 @@ def read_model(acsf_model: acsf_model):
 
 def main():
     # model_name = "t2"
-    model_name = "t4"
+    model_name = "t5"
     G2_params = [
         (0.4, 0.2),
         (0.6, 0.2),
@@ -145,7 +145,7 @@ def main():
         Rc,
     )
     nn_p = nn_props(
-        nodes=[30, 200, 100, 20, 1],
+        nodes=[64, 64, 32, 1],
         epochs=100,
         learning_rate=0.001,
         batch_size=32,

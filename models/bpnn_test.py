@@ -65,18 +65,20 @@ def prepare_data(xs, ys, train_size=0.3):
     return train_x, test_x, train_y, test_y
 
 
-def elementNet(Gs_num):
+def elementNet(Gs_num, nodes=[64, 64, 32, 1]):
     """
     Contains the default element schematic
+    Gs_num is the size of the input layer
+    nodes are the sizes of the hidden layers and last one is output
     """
     return nn.Sequential(
-        nn.Linear(Gs_num, 64),
+        nn.Linear(Gs_num, nodes[0]),
         nn.ReLU(),
-        nn.Linear(64, 64),
+        nn.Linear(nodes[0], nodes[1]),
         nn.ReLU(),
-        nn.Linear(64, 32),
+        nn.Linear(nodes[1], nodes[2]),
         nn.ReLU(),
-        nn.Linear(32, 1),
+        nn.Linear(nodes[2], nodes[3]),
     )
 
 
@@ -85,13 +87,13 @@ class atomicNet(torch.nn.Module):
     Constructs NN for H, C, N, O, and F individually
     """
 
-    def __init__(self, Gs_num: int):
+    def __init__(self, Gs_num: int, nodes: []):
         super().__init__()
-        self.h = elementNet(Gs_num)
-        self.c = elementNet(Gs_num)
-        self.n = elementNet(Gs_num)
-        self.o = elementNet(Gs_num)
-        self.f = elementNet(Gs_num)
+        self.h = elementNet(Gs_num, nodes)
+        self.c = elementNet(Gs_num, nodes)
+        self.n = elementNet(Gs_num, nodes)
+        self.o = elementNet(Gs_num, nodes)
+        self.f = elementNet(Gs_num, nodes)
         self.el = {1: self.h, 6: self.c, 7: self.n, 8: self.o, 9: self.f}
 
     def forward(self, x):
@@ -115,7 +117,6 @@ def saveModel_linear(
 def saveModel_ACSF_model(
     model,
     acsf_model: acsf_model,
-    scales=[1, 1],
 ):
     """
     Saves current model
@@ -123,10 +124,6 @@ def saveModel_ACSF_model(
 
     save_path = acsf_model.paths.model_path
     torch.save(model.state_dict(), save_path)
-    # with open(save_path + "_scale", 'w') as fp:
-    #     for i in scales:
-    #         fp.write(str(i))
-    #         fp.write('\n')
     return
 
 
@@ -286,10 +283,10 @@ def minimize_error(xs: [], ys: [], acsf_obj: acsf_model):
     xs, ys = prepare_minimization(xs, ys)
     Gs_num = xs[0].size()[1] - 1
     if not os.path.exists(acsf_obj.paths.linear_model):
-        model = atomicNet(Gs_num)
+        model = atomicNet(Gs_num, acsf_obj.nn_props.nodes)
         criterion = torch.nn.MSELoss(reduction='sum')
         optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        batch_size = 1
+        batch_size = len(xs)-1
         batch = 0
         E_totals = torch.zeros(batch_size)
         local_ys = torch.zeros(batch_size)
@@ -317,7 +314,7 @@ def minimize_error(xs: [], ys: [], acsf_obj: acsf_model):
         saveModel_linear(model, acsf_obj)
     else:
         print("loading model from ", acsf_obj.paths.linear_model)
-        model = atomicNet(Gs_num=Gs_num)
+        model = atomicNet(Gs_num, acsf_obj.nn_props.nodes)
         model.load_state_dict(torch.load(acsf_obj.paths.linear_model))
 
     with torch.no_grad():
@@ -365,7 +362,7 @@ def atomic_nn(
 
     Gs_num = xs[0].size()[1] - 1
 
-    model = atomicNet(Gs_num)
+    model = atomicNet(Gs_num, acsf_obj.nn_props.nodes)
     criterion = torch.nn.MSELoss(reduction='sum')
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     print("starting training...")
@@ -374,11 +371,11 @@ def atomic_nn(
     batch = 0
     print("Epoch,\tTraining E,\t Validation E")
 
+    train_errors = np.zeros((len(xs)))
+    train_errors_total = np.zeros((epochs))
+    test_errors = np.zeros((len(xs)))
+    test_errors_total = np.zeros((epochs))
     for epoch in range(epochs):
-        train_errors = np.zeros((len(xs)))
-        train_errors_total = np.zeros((epochs))
-        test_errors = np.zeros((len(xs)))
-        test_errors_total = np.zeros((epochs))
         for n, x in enumerate(xs):
             # y = ys[n]
             dif = ys[n][2]
@@ -416,11 +413,15 @@ def atomic_nn(
                 E_tot = E_tot[0]
                 train_errors[n] = criterion(E_tot, dif).item()
             test_e = np.sum(train_errors) / len(train_errors)
-            train_errors_total[epoch] = test_e
+            lowest = np.Inf
             for i in train_errors_total:
-                if i != 0 and test_e < i:
-                    print("\nSaving Model\n")
-                    saveModel_ACSF_model(model, acsf_obj, scales=scales)
+                if int(i) != 0 and i < lowest:
+                    lowest = i
+            print(lowest, test_e)
+            train_errors_total[epoch] = test_e
+            if test_e < lowest:
+                print("\nSaving Model\n")
+                saveModel_ACSF_model(model, acsf_obj)
         print("{:d},\t{:e},\t {:e}".format(epoch + 1, train_e, test_e))
 
         # if (epoch + 1) % 1 == 0 and loss:
