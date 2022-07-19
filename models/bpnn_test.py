@@ -12,6 +12,7 @@ from .structs import acsf_model
 import json
 import os
 import dataclasses
+import math
 
 
 def rescale_targets(ys: []):
@@ -273,63 +274,55 @@ class linearRegression(torch.nn.Module):
         return out
 
 
-def minimize_error(xs: [], ys: [], acsf_obj: acsf_model):
+def element_subvision(elements: [int] = [1, 6, 7, 8, 9]):
     """
-    Minimizes error before neural network training.
+    Generates the element dictionary for value lookups
     """
-    # print(type(xs), type(xs[0]), np.shape(xs[0]))
-    # print(type(ys), type(ys[0]))
-    print('Number of Molecules:', len(xs))
-    xs, ys = prepare_minimization(xs, ys)
-    Gs_num = xs[0].size()[1] - 1
-    if not os.path.exists(acsf_obj.paths.linear_model):
-        model = atomicNet(Gs_num, acsf_obj.nn_props.nodes)
-        criterion = torch.nn.MSELoss(reduction='sum')
-        optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
-        batch_size = len(xs)-1
-        batch = 0
-        E_totals = torch.zeros(batch_size)
-        local_ys = torch.zeros(batch_size)
-        for epoch in range(1):
-            print("linear")
-            for n, x in enumerate(xs):
-                y = ys[n]
-                E_tot = 0
-                for atom in x:
-                    E_i = model(atom)
-                    E_tot += E_i
-                E_tot = E_tot[0]
-                E_totals[batch] = E_tot
-                local_ys[batch] = y
-                batch += 1
-                if batch == batch_size:
-                    batch = 0
-                    # loss = criterion(E_tot, y)
-                    loss = criterion(E_totals, local_ys)
-                    optimizer.zero_grad()
-                    loss.backward()
-                    optimizer.step()
-                    E_totals = torch.zeros(batch_size)
-                    local_ys = torch.zeros(batch_size)
-        saveModel_linear(model, acsf_obj)
-    else:
-        print("loading model from ", acsf_obj.paths.linear_model)
-        model = atomicNet(Gs_num, acsf_obj.nn_props.nodes)
-        model.load_state_dict(torch.load(acsf_obj.paths.linear_model))
+    el_dc = {}
+    for n, i in enumerate(elements):
+        el_dc[i] = n
+    return el_dc
 
-    with torch.no_grad():
-        model.eval()
-        Es = []
-        for n, x in enumerate(xs):
-            y = ys[n]
-            E_tot = 0
-            for atom in x:
-                E_i = model(atom)
-                E_tot += E_i
-            E_tot = E_tot[0]
-            # [linear, target, (target - linear)]
-            Es.append([E_tot, y, y - E_tot])
-    return Es
+
+def minimize_error(
+    xs: [],
+    ys: [],
+    acsf_obj: acsf_model,
+    els: [] = [1, 6, 7, 8, 9],
+):
+    """
+    Minimizes error before neural network training through least squares fitting.
+    """
+    el_dc = element_subvision()
+    b = np.array(ys)
+    elements, Gs = np.shape(xs[0])
+    Gs -= 1
+    Gs_per_el = Gs // len(el_dc)
+
+    print('Number of Molecules:', len(xs))
+    A = np.zeros((len(xs), Gs * Gs_per_el))
+    for i in range(len(xs)):
+        m = xs[i]
+        for j in range(len(m)):
+            Gs_el = m[j, :]
+            e_j = el_dc[m[j, 0]]
+            for k in range(len(Gs_el)):
+                A[i, e_j * Gs_per_el + k] += Gs_el[k]
+
+    coef, *v = np.linalg.lstsq(A, b, rcond=None)
+    y_pred = np.zeros(np.shape(b))
+    for i in range(len(A)):
+        A[i, :] = np.multiply(A[i, :], coef)
+        y_pred[i] = np.sum(A[i, :])
+
+
+    MSE = np.square(np.subtract(b, y_pred)).mean()
+    RMSE = math.sqrt(MSE)
+    print("RMSE of least squares fitting:", RMSE)
+    # y_comp = np.column_stack((b, y_pred))
+    # print(y_comp)
+    MAE = np.sum(np.abs(np.subtract(b, y_pred))) / len(b)
+    print("MAE of least squares fitting :", MAE)
 
     # 1. count number elements in each molecule
     # 2. weight associated with each element
@@ -358,6 +351,7 @@ def atomic_nn(
     batch_size = acsf_obj.nn_props.batch_size
 
     ys = minimize_error(xs, ys, acsf_obj)
+    return
     xs, test_xs, ys, test_ys = prepare_data(xs, ys, 0.8)
 
     Gs_num = xs[0].size()[1] - 1
