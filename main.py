@@ -128,7 +128,7 @@ def read_model(acsf_model: acsf_model):
 
 def main():
     # model_name = "t2"
-    model_name = "t6"
+    model_name = "t8"
     G2_params = [
         (0.4, 0.2),
         (0.6, 0.2),
@@ -147,12 +147,12 @@ def main():
     nn_p = nn_props(
         nodes=[64, 64, 32, 1],
         epochs=400,
-        learning_rate=0.01,
+        learning_rate=0.001,
         batch_size=32,
     )
-    # t0 = 1e4
-    # t3 = 1e6
-    # t6 = 1e2
+    # t0.pkl = 1e4
+    # t3.pkl = 1e5
+    # t6.pkl = 1e2
     p = paths(
         data_path="data/t3.pkl",
         model_path="results/%s" % model_name,

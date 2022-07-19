@@ -13,6 +13,7 @@ import json
 import os
 import dataclasses
 import math
+import time
 
 
 def rescale_targets(ys: []):
@@ -128,9 +129,24 @@ def saveModel_ACSF_model(
     return
 
 
-def stats_results(differences: [], percentages: [], acsf_obj: acsf_model):
+def stats_epoch(differences: []):
     """
-    Returns mean differences, mean percentages, and mean absolute error.
+    stats_epoch reports MAE and Max Error for epochs
+    """
+    max_d = max(differences)
+    abs_dif = []
+    for i in differences:
+        if i < 0:
+            abs_dif.append(-i)
+        else:
+            abs_dif.append(i)
+    mae = sum(abs_dif) / len(abs_dif)
+    return mae, max_d
+
+
+def stats_results(differences: [], acsf_obj: acsf_model):
+    """
+    Returns mean differences, mean, mean absolute error, and max error.
     """
     max_d = max(differences)
     avg_dif = sum(differences) / len(differences)
@@ -284,6 +300,56 @@ def element_subvision(elements: [int] = [1, 6, 7, 8, 9]):
     return el_dc
 
 
+def minimize_error2(
+    xs: [],
+    ys: [],
+    acsf_obj: acsf_model,
+    els: [] = [1, 6, 7, 8, 9],
+):
+    """
+    Minimizes error before neural network training through least squares fitting.
+    """
+    el_dc = element_subvision()
+    b = np.array(ys)
+    elements, Gs = np.shape(xs[0])
+    Gs -= 1
+    Gs_per_el = Gs // len(el_dc)
+
+    print('Number of Molecules:', len(xs))
+    A = np.zeros((len(xs), len(el_dc)))
+    for i in range(len(xs)):
+        m = xs[i]
+        for j in range(len(m)):
+            e_j = el_dc[m[j, 0]]
+            A[i, e_j] += 1
+
+    coef, *v = np.linalg.lstsq(A, b, rcond=None)
+    print(coef)
+    y_pred = np.zeros(np.shape(b))
+    for i in range(len(A)):
+        A[i, :] = np.multiply(A[i, :], coef)
+        y_pred[i] = np.sum(A[i, :])
+
+    MSE = np.square(np.subtract(b, y_pred)).mean()
+    RMSE = math.sqrt(MSE)
+    print("\nminimize 2...\n")
+    print("RMSE of least squares fitting:", RMSE)
+    y_comp = np.column_stack((b, y_pred))
+    MAE = np.sum(np.abs(np.subtract(b, y_pred))) / len(b)
+    print("MAE of least squares fitting :", MAE)
+
+    # 1. count number elements in each molecule
+    # 2. weight associated with each element
+    # E = \Sigma_i^N(w_i*N_i)
+    # linear regression minimization
+    # equivalent to single linear layer
+    # gives optimum weights
+    # take linear model, and precompute for all molecules and starting point is energy that comes out
+    # save and subtract
+
+    return y_comp, coef
+
+
 def minimize_error(
     xs: [],
     ys: [],
@@ -315,7 +381,6 @@ def minimize_error(
         A[i, :] = np.multiply(A[i, :], coef)
         y_pred[i] = np.sum(A[i, :])
 
-
     MSE = np.square(np.subtract(b, y_pred)).mean()
     RMSE = math.sqrt(MSE)
     print("RMSE of least squares fitting:", RMSE)
@@ -335,6 +400,50 @@ def minimize_error(
     return y_comp
 
 
+# train_errors_total[epoch], test_errors_total[epoch]
+
+
+def nn_progress(
+    start: int,
+    train_error: float,
+    test_error: float,
+    epochs: int,
+    epoch: int,
+    mae: float,
+    max_e: float,
+):
+    epoch_time = time.time()
+    t_dif = epoch_time - start
+    time_of_whole = (t_dif) * epochs / (epoch + 1)
+    time_left = (time_of_whole - t_dif) / 60
+    if time_left > 60:
+        time_left /= 60
+        print("{:d},\t {:e},\t {:e}\t {:e}\t {:e}\t {:.2f} Hours".format(
+            epoch + 1, train_error, test_error, mae, max_e, time_left))
+    elif time_left > 1:
+        print("{:d},\t {:e},\t {:e}\t {:e}\t {:e}\t {:.2f} Minutes".format(
+            epoch + 1, train_error, test_error, mae, max_e, time_left))
+    else:
+        time_left *= 60
+        print("{:d},\t {:e},\t {:e}\t {:e}\t {:e}\t {:.2f} Seconds".format(
+            epoch + 1, train_error, test_error, mae, max_e, time_left))
+
+
+def eval_linear(
+    molecule,
+    coefs: np.array,
+    el_dc: dict,
+):
+    """
+    eval_linear provides the atom's estimated value
+    """
+    A = np.zeros(len(molecule))
+    for j in range(len(molecule)):
+        e_j = el_dc[molecule[j, 0]]
+        A[e_j] += 1
+    return
+
+
 def atomic_nn(
     xs: [],
     ys: [],
@@ -349,7 +458,8 @@ def atomic_nn(
     learning_rate = acsf_obj.nn_props.learning_rate
     batch_size = acsf_obj.nn_props.batch_size
 
-    ys = minimize_error(xs, ys, acsf_obj)
+    # ys1 = minimize_error(xs, ys, acsf_obj)
+    ys, coef = minimize_error2(xs, ys, acsf_obj)
     xs, test_xs, ys, test_ys = prepare_data(xs, ys, 0.8)
 
     Gs_num = xs[0].size()[1] - 1
@@ -364,23 +474,31 @@ def atomic_nn(
     local_ys = torch.zeros(batch_size)
     lowest_validation_error = np.inf
     batch = 0
-    print("Epoch,\tTraining E,\t Validation E")
+    print(
+        "Epoch,\tTraining E,\t Validation E\t MAE\t Max E\t Estimated Time Left"
+    )
 
     train_errors = np.zeros((len(xs)))
     train_errors_total = np.zeros((epochs))
     test_errors_total = np.zeros((epochs))
+    el_dc = element_subvision()
+    start = time.time()
     for epoch in range(epochs):
         for n, x in enumerate(xs):
             y_target = ys[n][0]
             y_linear = ys[n][1]
             y = torch.tensor(y_target - y_linear)
+            y = torch.tensor(y_target)
             local_ys[batch] = y
             # want... y = E_ref_target - E_linear_model
             E_tot = 0
             for atom in x:
                 E_i = model(atom)
+                E_i += coef[el_dc[int(atom[0])]]
                 E_tot += E_i
             E_tot = E_tot[0]
+            # should this instead be (E_tot + y_linear) compared with E_target?
+            # that is the same as E_tot = E_target - y_linear
             E_totals[batch] = E_tot
             train_errors[n] = criterion(E_tot, y).item()
             batch += 1
@@ -400,24 +518,41 @@ def atomic_nn(
         target_test = torch.zeros(len(test_xs))
         with torch.no_grad():
             model.eval()
+            differences = []
             for n, x in enumerate(test_xs):
                 y_target = test_ys[n][0]
                 y_linear = test_ys[n][1]
-                y = torch.tensor(y_target - y_linear)
+                # y = torch.tensor(y_target - y_linear)
+                y = torch.tensor(y_target)
                 target_test[n] = y
                 # want... y = E_ref_target - E_linear_model
                 E_tot = 0
                 for atom in x:
                     E_i = model(atom)
+                    E_i += coef[el_dc[int(atom[0])]]
                     E_tot += E_i
                 E_tot = E_tot[0]
                 E_model_test[n] = E_tot
-            test_errors_total[epoch] = criterion(E_model_test, target_test).item()
-            if test_errors_total[n] < lowest_validation_error:
+                dif = float(E_tot - y)
+                differences.append(dif)
+            test_errors_total[epoch] = criterion(E_model_test,
+                                                 target_test).item()
+            if test_errors_total[epoch] < lowest_validation_error:
                 # print("\nSaving Model\n")
                 saveModel_ACSF_model(model, acsf_obj)
-        print("{:d},\t{:e},\t {:e}".format(epoch + 1, train_errors_total[epoch], test_errors_total[epoch]))
+        mae, max_e = stats_epoch(differences)
 
+        nn_progress(
+            start,
+            train_errors_total[epoch],
+            test_errors_total[epoch],
+            epochs,
+            epoch,
+            mae,
+            max_e,
+        )
+
+    print("\nTraining time:", time.time() - start)
     e_x = range(epochs)
     fig = plt.figure(dpi=400)
     plt.plot(train_errors_total, e_x, '-k', label="Train Errors")
@@ -426,21 +561,24 @@ def atomic_nn(
     plt.ylabel('Epochs')
     plt.legend()
     plt.savefig(acsf_obj.paths.plot_path)
-    return
-    # with torch.no_grad():
-    #     model.eval()
-    #     differences = []
-    #     percentages = []
-    #     for n, x in enumerate(test_xs):
-    #         y = test_ys[n]
-    #         E_tot = 0
-    #         for atom in x:
-    #             E_i = model(atom)
-    #             E_tot += E_i
-    #         E_tot = E_tot[0]
-    #         dif = y - E_tot
-    #         differences.append(dif)
-    #         perc = abs(dif) / y
-    #         percentages.append(perc)
-    # stats_results(differences, percentages, acsf_obj)
+
+    model = atomicNet(Gs_num, acsf_obj.nn_props.nodes)
+    model.load_state_dict(torch.load(acsf_obj.paths.model_path))
+    with torch.no_grad():
+        model.eval()
+        differences = []
+        percentages = []
+        for n, x in enumerate(test_xs):
+            y_target = test_ys[n][0]
+            y_linear = test_ys[n][1]
+            y = torch.tensor(y_target - y_linear)
+            # want... y = E_ref_target - E_linear_model
+            E_tot = 0
+            for atom in x:
+                E_i = model(atom)
+                E_tot += E_i
+            E_tot = E_tot[0]
+            dif = float(E_tot - y)
+            differences.append(dif)
+    stats_results(differences, acsf_obj)
     return

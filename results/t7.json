@@ -1,0 +1,56 @@
+{
+    "name": "t7",
+    "num_molecules": 100000,
+    "acsf_Gs": {
+        "G2_params": [
+            [
+                0.4,
+                0.2
+            ],
+            [
+                0.6,
+                0.2
+            ]
+        ],
+        "G4_params": [
+            [
+                0.4,
+                2,
+                1
+            ],
+            [
+                0.6,
+                2,
+                1
+            ],
+            [
+                0.6,
+                2,
+                -1
+            ]
+        ],
+        "Rc": 5.0
+    },
+    "paths": {
+        "data_path": "data/t0.pkl",
+        "model_path": "results/t7",
+        "plot_path": "plots/t7",
+        "linear_model": "results/t7_linear"
+    },
+    "results": {
+        "avg_dif": 0,
+        "mae": 0,
+        "max_d": 0
+    },
+    "nn_props": {
+        "nodes": [
+            64,
+            64,
+            32,
+            1
+        ],
+        "batch_size": 32,
+        "epochs": 50,
+        "learning_rate": 0.001
+    }
+}
