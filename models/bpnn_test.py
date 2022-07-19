@@ -319,8 +319,7 @@ def minimize_error(
     MSE = np.square(np.subtract(b, y_pred)).mean()
     RMSE = math.sqrt(MSE)
     print("RMSE of least squares fitting:", RMSE)
-    # y_comp = np.column_stack((b, y_pred))
-    # print(y_comp)
+    y_comp = np.column_stack((b, y_pred))
     MAE = np.sum(np.abs(np.subtract(b, y_pred))) / len(b)
     print("MAE of least squares fitting :", MAE)
 
@@ -333,7 +332,7 @@ def minimize_error(
     # take linear model, and precompute for all molecules and starting point is energy that comes out
     # save and subtract
 
-    return
+    return y_comp
 
 
 def atomic_nn(
@@ -351,29 +350,31 @@ def atomic_nn(
     batch_size = acsf_obj.nn_props.batch_size
 
     ys = minimize_error(xs, ys, acsf_obj)
-    return
     xs, test_xs, ys, test_ys = prepare_data(xs, ys, 0.8)
 
     Gs_num = xs[0].size()[1] - 1
 
     model = atomicNet(Gs_num, acsf_obj.nn_props.nodes)
-    criterion = torch.nn.MSELoss(reduction='sum')
+    criterion = torch.nn.MSELoss(reduction='mean')
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+
     print("starting training...")
+
     E_totals = torch.zeros(batch_size)
     local_ys = torch.zeros(batch_size)
+    lowest_validation_error = np.inf
     batch = 0
     print("Epoch,\tTraining E,\t Validation E")
 
     train_errors = np.zeros((len(xs)))
     train_errors_total = np.zeros((epochs))
-    test_errors = np.zeros((len(xs)))
     test_errors_total = np.zeros((epochs))
     for epoch in range(epochs):
         for n, x in enumerate(xs):
-            # y = ys[n]
-            dif = ys[n][2]
-            # E_ref = current_y
+            y_target = ys[n][0]
+            y_linear = ys[n][1]
+            y = torch.tensor(y_target - y_linear)
+            local_ys[batch] = y
             # want... y = E_ref_target - E_linear_model
             E_tot = 0
             for atom in x:
@@ -381,12 +382,10 @@ def atomic_nn(
                 E_tot += E_i
             E_tot = E_tot[0]
             E_totals[batch] = E_tot
-            local_ys[batch] = dif
-            train_errors[n] = criterion(E_tot, dif).item()
+            train_errors[n] = criterion(E_tot, y).item()
             batch += 1
             if batch == batch_size:
                 batch = 0
-                # loss = criterion(E_tot, y)
                 loss = criterion(E_totals, local_ys)
                 optimizer.zero_grad()
                 loss.backward()
@@ -396,30 +395,28 @@ def atomic_nn(
 
         train_e = np.sum(train_errors) / len(train_errors)
         train_errors_total[epoch] = train_e
+
+        E_model_test = torch.zeros(len(test_xs))
+        target_test = torch.zeros(len(test_xs))
         with torch.no_grad():
             model.eval()
             for n, x in enumerate(test_xs):
-                y = test_ys[n]
+                y_target = test_ys[n][0]
+                y_linear = test_ys[n][1]
+                y = torch.tensor(y_target - y_linear)
+                target_test[n] = y
+                # want... y = E_ref_target - E_linear_model
                 E_tot = 0
                 for atom in x:
                     E_i = model(atom)
                     E_tot += E_i
                 E_tot = E_tot[0]
-                train_errors[n] = criterion(E_tot, dif).item()
-            test_e = np.sum(train_errors) / len(train_errors)
-            lowest = np.Inf
-            for i in train_errors_total:
-                if int(i) != 0 and i < lowest:
-                    lowest = i
-            print(lowest, test_e)
-            train_errors_total[epoch] = test_e
-            if test_e < lowest:
-                print("\nSaving Model\n")
+                E_model_test[n] = E_tot
+            test_errors_total[epoch] = criterion(E_model_test, target_test).item()
+            if test_errors_total[n] < lowest_validation_error:
+                # print("\nSaving Model\n")
                 saveModel_ACSF_model(model, acsf_obj)
-        print("{:d},\t{:e},\t {:e}".format(epoch + 1, train_e, test_e))
-
-        # if (epoch + 1) % 1 == 0 and loss:
-        #     print('\tEpoch Loss:', epoch + 1, loss.item())
+        print("{:d},\t{:e},\t {:e}".format(epoch + 1, train_errors_total[epoch], test_errors_total[epoch]))
 
     e_x = range(epochs)
     fig = plt.figure(dpi=400)
@@ -430,21 +427,20 @@ def atomic_nn(
     plt.legend()
     plt.savefig(acsf_obj.paths.plot_path)
     return
-    with torch.no_grad():
-        model.eval()
-        differences = []
-        percentages = []
-        for n, x in enumerate(test_xs):
-            y = test_ys[n]
-            E_tot = 0
-            for atom in x:
-                E_i = model(atom)
-                E_tot += E_i
-            E_tot = E_tot[0]
-            dif = y - E_tot
-            differences.append(dif)
-            perc = abs(dif) / y
-            percentages.append(perc)
-
-    stats_results(differences, percentages, acsf_obj)
+    # with torch.no_grad():
+    #     model.eval()
+    #     differences = []
+    #     percentages = []
+    #     for n, x in enumerate(test_xs):
+    #         y = test_ys[n]
+    #         E_tot = 0
+    #         for atom in x:
+    #             E_i = model(atom)
+    #             E_tot += E_i
+    #         E_tot = E_tot[0]
+    #         dif = y - E_tot
+    #         differences.append(dif)
+    #         perc = abs(dif) / y
+    #         percentages.append(perc)
+    # stats_results(differences, percentages, acsf_obj)
     return
