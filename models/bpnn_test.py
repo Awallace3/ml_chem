@@ -416,17 +416,20 @@ def nn_progress(
     t_dif = epoch_time - start
     time_of_whole = (t_dif) * epochs / (epoch + 1)
     time_left = (time_of_whole - t_dif) / 60
-    if time_left > 60:
-        time_left /= 60
-        print("{:d},\t {:e},\t {:e}\t {:e}\t {:e}\t {:.2f} Hours".format(
-            epoch + 1, train_error, test_error, mae, max_e, time_left))
-    elif time_left > 1:
-        print("{:d},\t {:e},\t {:e}\t {:e}\t {:e}\t {:.2f} Minutes".format(
-            epoch + 1, train_error, test_error, mae, max_e, time_left))
-    else:
-        time_left *= 60
-        print("{:d},\t {:e},\t {:e}\t {:e}\t {:e}\t {:.2f} Seconds".format(
-            epoch + 1, train_error, test_error, mae, max_e, time_left))
+    time_left /= 60
+    print("{:d},\t {:e},\t {:e}\t {:e}\t {:e}\t {:.2f}".format(
+        epoch + 1, train_error, test_error, mae, max_e, time_left))
+    #if time_left > 60:
+    #    time_left /= 60
+    #    print("{:d},\t {:e},\t {:e}\t {:e}\t {:e}\t {:.2f} Hours".format(
+    #        epoch + 1, train_error, test_error, mae, max_e, time_left))
+    #elif time_left > 1:
+    #    print("{:d},\t {:e},\t {:e}\t {:e}\t {:e}\t {:.2f} Minutes".format(
+    #        epoch + 1, train_error, test_error, mae, max_e, time_left))
+    #else:
+    #    time_left *= 60
+    #    print("{:d},\t {:e},\t {:e}\t {:e}\t {:e}\t {:.2f} Seconds".format(
+    #        epoch + 1, train_error, test_error, mae, max_e, time_left))
 
 
 def eval_linear(
@@ -475,9 +478,8 @@ def atomic_nn(
     lowest_validation_error = np.inf
     batch = 0
     print(
-        "Epoch,\tTraining E,\t Validation E\t MAE\t Max E\t Estimated Time Left"
+        "Epoch,\tTraining E,\t Validation E,\t MAE, \t Max E, \t ET Hrs."
     )
-
     train_errors = np.zeros((len(xs)))
     train_errors_total = np.zeros((epochs))
     test_errors_total = np.zeros((epochs))

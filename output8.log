@@ -1,0 +1,29 @@
+acsf_model(name='t8',
+           num_molecules=100000,
+           acsf_Gs=acsf_Gs(G2_params=[(0.4, 0.2), (0.6, 0.2)],
+                           G4_params=[(0.4, 2, 1), (0.6, 2, 1), (0.6, 2, -1)],
+                           Rc=5.0),
+           paths=paths(data_path='data/t3.pkl',
+                       model_path='results/t8',
+                       plot_path='plots/t8',
+                       linear_model='results/t8_linear'),
+           results=results(avg_dif=0, mae=0, max_d=0),
+           nn_props=nn_props(nodes=[64, 64, 32, 1],
+                             batch_size=32,
+                             epochs=400,
+                             learning_rate=0.001))
+found data at data/t3.pkl
+Number of Molecules: 100000
+[ -66.0504004  -142.3658914  -105.26806568 -102.4880772   -89.20219527]
+
+minimize 2...
+
+RMSE of least squares fitting: 25.825673516203075
+MAE of least squares fitting : 20.38333947438163
+starting training...
+Epoch,	Training E,	 Validation E	 MAE	 Max E	 Estimated Time Left
+1,	 4.329707e+02,	 2.821761e+02	 1.246297e+01	 5.649194e+01	 37.01 Hours
+2,	 2.458595e+02,	 2.297092e+02	 1.105068e+01	 5.767334e+01	 36.85 Hours
+3,	 2.145185e+02,	 2.078130e+02	 1.051487e+01	 5.549805e+01	 37.09 Hours
+4,	 1.949777e+02,	 1.883506e+02	 9.921694e+00	 6.408435e+01	 37.08 Hours
+5,	 1.781260e+02,	 1.764699e+02	 9.536901e+00	 6.460443e+01	 36.97 Hours
