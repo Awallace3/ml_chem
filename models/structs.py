@@ -5,6 +5,7 @@ from dataclasses import dataclass
 class paths():
     data_path: str = "data/t0.pickle"
     model_path: str = "results/t0"
+    carts: str="data/gdb9.pkl"
     plot_path: str = "plots/t0.png"
     linear_model: str = "results/t0_linear"
 

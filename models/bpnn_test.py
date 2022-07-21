@@ -12,7 +12,6 @@ from .structs import acsf_model
 import json
 import os
 import dataclasses
-import math
 import time
 
 
@@ -56,6 +55,7 @@ def prepare_data(xs, ys, train_size=0.3):
     """
     Splits dataset into train/test with restructuring datatypes to tensors
     """
+    print(type(xs), type(ys))
     train_x, test_x, train_y, test_y = train_test_split(xs,
                                                         ys,
                                                         train_size=train_size,
@@ -312,12 +312,10 @@ def minimize_error2(
     el_dc = element_subvision()
     b = np.array(ys)
     elements, Gs = np.shape(xs[0])
-    Gs -= 1
-    Gs_per_el = Gs // len(el_dc)
-
-    print('Number of Molecules:', len(xs))
-    A = np.zeros((len(xs), len(el_dc)))
-    for i in range(len(xs)):
+    n_mols = len(xs)
+    print('Number of Molecules:', n_mols)
+    A = np.zeros((n_mols, len(el_dc)))
+    for i in range(n_mols):
         m = xs[i]
         for j in range(len(m)):
             e_j = el_dc[m[j, 0]]
@@ -331,7 +329,7 @@ def minimize_error2(
         y_pred[i] = np.sum(A[i, :])
 
     MSE = np.square(np.subtract(b, y_pred)).mean()
-    RMSE = math.sqrt(MSE)
+    RMSE = np.sqrt(MSE)
     print("\nminimize 2...\n")
     print("RMSE of least squares fitting:", RMSE)
     y_comp = np.column_stack((b, y_pred))
@@ -451,6 +449,7 @@ def atomic_nn(
     xs: [],
     ys: [],
     acsf_obj: acsf_model,
+    coef: np.array,
 ):
     """
     Constructs a new model from a dataset of the structure...

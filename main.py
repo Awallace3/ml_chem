@@ -1,16 +1,18 @@
 from models import bpnn_test
-from setup import collect_data
+from setup import collect_data, create_carts_pkl, create_atomic_energy_guesses
 import pprint
 import os
 from models.bpnn_test import write_pickle, read_pickle
 from models.structs import paths, acsf_Gs, acsf_model, results, nn_props
 
-
 pp = pprint.PrettyPrinter(indent=4)
 
+
 def bpnn(acsf_model: acsf_model, train=True):
+    d1 = read_pickle(acsf_model.paths.carts)
     if not os.path.exists(acsf_model.paths.data_path):
-        xs, ys = collect_data(
+        xs, ys, coefs = collect_data(
+            d1 ,
             acsf_model.num_molecules,
             progress=True,
             Rc=acsf_model.acsf_Gs.Rc,
@@ -24,18 +26,12 @@ def bpnn(acsf_model: acsf_model, train=True):
         data = read_pickle(acsf_model.paths.data_path)
         xs, ys = data[0], data[1]
 
+    coefs, ys = create_atomic_energy_guesses(d1)
+    ys = ys[:,0]
     if train:
-        bpnn_test.atomic_nn(
-            xs,
-            ys,
-            acsf_model
-        )
+        bpnn_test.atomic_nn(xs, ys, acsf_model, coefs)
     else:
-        bpnn_test.test_atomic_nn(
-            xs,
-            ys,
-            acsf_model
-        )
+        bpnn_test.test_atomic_nn(xs, ys, acsf_model)
 
 
 def train_bpnn():
@@ -128,7 +124,7 @@ def read_model(acsf_model: acsf_model):
 
 def main():
     # model_name = "t2"
-    model_name = "t8"
+    model_name = "t9"
     G2_params = [
         (0.4, 0.2),
         (0.6, 0.2),
@@ -146,22 +142,24 @@ def main():
     )
     nn_p = nn_props(
         nodes=[64, 64, 32, 1],
-        epochs=400,
+        epochs=200,
         learning_rate=0.001,
         batch_size=32,
     )
     # t0.pkl = 1e4
     # t3.pkl = 1e5
     # t6.pkl = 1e2
+    # t9.pkl = full dataset
     p = paths(
-        data_path="data/t3.pkl",
+        data_path="data/t9.pkl",
         model_path="results/%s" % model_name,
+        carts="data/gdb9.pkl",
         linear_model="results/%s_linear" % model_name,
         plot_path="plots/%s" % model_name,
     )
     m = acsf_model(
         model_name,
-        num_molecules=100000,
+        num_molecules=1000000000,
         acsf_Gs=Gs,
         paths=p,
         nn_props=nn_p,
@@ -170,6 +168,7 @@ def main():
     # remove_model(m)
     # m = read_model(m)
     pp.pprint(m)
+    # create_carts_pkl()
 
     bpnn(
         m,

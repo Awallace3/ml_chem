@@ -32,7 +32,7 @@
         "Rc": 5.0
     },
     "paths": {
-        "data_path": "data/t6.pkl",
+        "data_path": "data/t3.pkl",
         "model_path": "results/t6",
         "plot_path": "plots/t6",
         "linear_model": "results/t6_linear"
@@ -50,7 +50,7 @@
             1
         ],
         "batch_size": 32,
-        "epochs": 10,
-        "learning_rate": 0.01
+        "epochs": 400,
+        "learning_rate": 0.001
     }
 }

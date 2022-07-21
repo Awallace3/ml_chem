@@ -6,6 +6,9 @@ import rdkit
 from dscribe.descriptors import ACSF
 from ase.build import molecule
 import math
+from dataclasses import dataclass
+import pickle
+from sklearn.linear_model import LinearRegression
 """
 reading data inspired by zatayue/MXMNet
 """
@@ -78,6 +81,16 @@ def build_ACSF_dscribe():
     # h2o_carts = np.array(water.positions)
     # h2o_order = np.array(water.numbers)
     return
+
+
+def read_pickle(fname='data.pickle'):
+    with open(fname, 'rb') as handle:
+        return pickle.load(handle)
+
+
+def write_pickle(data, fname='data.pickle'):
+    with open(fname, 'wb') as handle:
+        pickle.dump(data, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
 
 def remove_extra_wb(line: str):
@@ -294,7 +307,80 @@ def build_ACSF_atom_subdivided(
     return G
 
 
-def collect_data(
+def element_subvision(elements: [int] = [1, 6, 7, 8, 9]):
+    """
+    Generates the element dictionary for value lookups
+    """
+    el_dc = {}
+    for n, i in enumerate(elements):
+        el_dc[i] = n
+    return el_dc
+
+
+@dataclass
+class mol_info:
+    name: str
+    atom_counts: np.array
+    energy: float
+    carts: np.array
+
+
+def create_carts_pkl(path_sdf="data/gdb9.sdf",
+                     path_csv="data/gdb9.sdf.csv",
+                     path_pkl="data/gdb9.pkl"):
+    """
+    create_carts_pkl creates pkl of relavent information from gdb9 sdf and csv.
+    """
+    df = pd.read_csv(path_csv)
+    el_dc = element_subvision()
+    suppl = Chem.SDMolSupplier(path_sdf, removeHs=False, sanitize=False)
+    xs, ys = [], []
+    n_mols = len(suppl)
+    printProgressBar(0,
+                     n_mols,
+                     prefix='Progress:',
+                     suffix='Complete',
+                     length=50)
+    ms, atom_cnts, es, carts1 = [], [], [], []
+    for i, mol in enumerate(suppl):
+        m = mol.GetProp("_Name")
+        # print(m, float(df.loc[df['mol_id'] == m]["u0"]))
+        e = np.float(df.loc[df['mol_id'] == m]["u0"])
+        ys.append(e)
+
+        N = mol.GetNumAtoms()
+        pos = suppl.GetItemText(i).split('\n')[4:4 + N]
+        atoms = mol.GetAtoms()
+
+        carts = []
+        atom_cnt = np.zeros(len(el_dc))
+
+        for n, line in enumerate(pos):
+            a = line.split()[:3]
+            el = int(atoms[n].GetAtomicNum())
+            atom_cnt[el_dc[el]] += 1
+            anum = float(el)
+            row = [anum, float(a[0]), float(a[1]), float(a[2])]
+            carts.append(row)
+        arr = np.array(carts)
+
+        # d = mol_info(m, atom_cnt, e, carts)
+        # d = [m, atom_cnt, e, carts]
+        ms.append(m)
+        atom_cnts.append(atom_cnt)
+        es.append(e)
+        carts1.append(carts)
+        printProgressBar(i,
+                         n_mols,
+                         prefix='Progress:',
+                         suffix='Complete',
+                         length=50)
+    data = [ms, atom_cnts, es, carts1]
+    write_pickle(data, path_pkl)
+    return data
+
+
+def collect_data_scratch(
     stop=1,
     path_sdf="data/gdb9.sdf",
     path_csv="data/gdb9.sdf.csv",
@@ -350,6 +436,85 @@ def collect_data(
             break
     # xs = np.float32(xs)
     # ys = np.array(ys, dtype='float32')
+    return xs, ys
+
+
+def create_atomic_energy_guesses(data):
+    X = np.array(data[1])
+    y = np.array(data[2])
+    model = LinearRegression(fit_intercept=True)
+    model.fit(X, y)
+    y_pred = model.predict(X)
+    mae = np.sum(np.abs(np.subtract(y_pred, y))) / len(y)
+    avg = np.sum(np.subtract(y_pred, y)) / len(y)
+    # print("avg:", avg)
+    # print("MAE:", mae)
+    rmse = np.sqrt(np.mean((y_pred - y)**2))
+    # print("RMSE:", rmse)
+    # print("coefs:", model.coef_)
+    y_comp = np.zeros((len(y), 2))
+    y_comp[:, 0] = y
+    y_comp[:, 1] = y_pred
+    return model.coef_, y_comp
+
+
+
+
+def collect_data(
+    data: [],
+    stop=1,
+    progress=False,
+    Rc=6.0,
+    G2_params=[(0.4, 0.2), (0.6, 0.8), (0.6, 0.2), (0.8, 0.5)],
+    G4_params=[(0.4, 2, 1), (0.6, 2, 1), (0.6, 2, -1)],
+):
+    """
+    Collects downloaded qm9 data and constructs ACSF
+
+    data = [ms, np.array(atom_cnts), np.array(es), carts1]
+    """
+    # types = {'H': 0, 'C': 1, 'N': 2, 'O': 3, 'F': 4}
+    # symbols = {'H': 1, 'C': 6, 'N': 7, 'O': 8, 'F': 9}
+
+    ys = data[2][:stop]
+    coords = data[3]
+
+    xs = []
+    if stop > len(coords):
+        stop = len(coords)
+    if progress:
+        printProgressBar(
+            0,
+            stop,
+            prefix='Progress:',
+            suffix='Complete',
+            length=50,
+        )
+    for i, carts in enumerate(coords):
+        carts = np.array(carts)
+        G = build_ACSF_atom_subdivided(
+            carts,
+            G2_params=G2_params,
+            G4_params=G4_params,
+            Rc=Rc,
+        )
+        xs.append(G)
+        if progress:
+            printProgressBar(
+                i,
+                stop,
+                prefix='Progress:',
+                suffix='Complete',
+                length=50,
+            )
+        if stop == i + 1:
+            break
+    # xs = np.float32(xs)
+    # ys = np.array(ys, dtype='float32')
+    print()
+    print()
+    print()
+    print(len(xs), len(ys))
     return xs, ys
 
 
